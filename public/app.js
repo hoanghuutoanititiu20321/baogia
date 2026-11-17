@@ -113,7 +113,6 @@ const App = (() => {
   // AUTHENTICATION & LOGIN FLOW
   // ===========================================================================
   async function init() {
-    await loadDemoAccountsForLogin();
     if (!state.authToken) {
       showLoginScreen();
       return;
@@ -131,40 +130,6 @@ const App = (() => {
     }
   }
 
-  async function loadDemoAccountsForLogin() {
-    try {
-      const res = await fetch('/api/auth/demo-accounts');
-      const data = await res.json();
-      const box = document.getElementById('demoAccountsContainer');
-      if (!box || !data.accounts) return;
-
-      box.innerHTML = data.accounts.map(acc => {
-        const roleClass = acc.role === 'admin' ? 'admin' : acc.role === 'manager' ? 'manager' : 'sale';
-        return `
-          <div class="demo-acc-item">
-            <div>
-              <div style="display:flex;align-items:center;gap:6px;">
-                <strong style="color:var(--navy-dark)">${esc(acc.full_name)}</strong>
-                <span class="role-badge ${roleClass}">${esc(ROLE_LABELS[acc.role] || acc.role)}</span>
-                ${!acc.is_active ? '<span class="status-pill status-rejected">Đã khóa</span>' : ''}
-              </div>
-              <div style="font-size:11.5px;color:var(--muted);margin-top:2px;">
-                User: <code>${esc(acc.username)}</code> · ${acc.permissions?.canViewCost ? '✅ Xem Giá Cost & Duyệt BG' : '🔒 Ẩn Giá Cost'}
-              </div>
-            </div>
-            <button type="button" class="btn btn-sm btn-navy"
-                    onclick="App.quickLogin('${esc(acc.username)}', '123456')"
-                    ${!acc.is_active ? 'disabled' : ''}>
-              Đăng nhập →
-            </button>
-          </div>
-        `;
-      }).join('');
-    } catch (err) {
-      console.error('Error loading demo accounts:', err);
-    }
-  }
-
   function showLoginScreen(errorMsg = '') {
     const overlay = document.getElementById('loginOverlay');
     if (overlay) overlay.classList.remove('hidden');
@@ -177,7 +142,6 @@ const App = (() => {
         errBox.classList.add('hidden');
       }
     }
-    loadDemoAccountsForLogin();
   }
 
   function hideLoginScreen() {
@@ -186,22 +150,17 @@ const App = (() => {
 
   function toggleLoginPassVisibility() {
     const inp = document.getElementById('loginPassword');
+    const btn = document.getElementById('loginPassToggleBtn');
     if (!inp) return;
-    inp.type = inp.type === 'password' ? 'text' : 'password';
+    const isPass = inp.type === 'password';
+    inp.type = isPass ? 'text' : 'password';
+    if (btn) btn.textContent = isPass ? 'Ẩn' : 'Hiện';
   }
 
   async function submitLogin(e) {
     if (e) e.preventDefault();
     const username = document.getElementById('loginUsername')?.value.trim();
     const password = document.getElementById('loginPassword')?.value || '';
-    await performLogin(username, password);
-  }
-
-  async function quickLogin(username, password) {
-    const uInp = document.getElementById('loginUsername');
-    const pInp = document.getElementById('loginPassword');
-    if (uInp) uInp.value = username;
-    if (pInp) pInp.value = password;
     await performLogin(username, password);
   }
 
@@ -322,21 +281,6 @@ const App = (() => {
         ddPerm.textContent = activePerms.length > 0
           ? `Quyền: ${activePerms.join(' · ')}`
           : 'Quyền: Lập & Xuất Báo Giá (Ẩn Giá Cost)';
-      }
-
-      const ddSwitch = document.getElementById('dropdownQuickSwitchList');
-      if (ddSwitch && state.users) {
-        ddSwitch.innerHTML = state.users.filter(acc => acc.is_active).map(acc => {
-          const isCurrent = acc.username === u.username;
-          const rLabel = acc.role === 'admin' ? 'Admin' : acc.role === 'manager' ? 'Quản lý' : 'Sale';
-          return `
-            <button type="button" class="dropdown-item ${isCurrent ? 'active-acc' : ''}"
-                    onclick="App.closeUserDropdown(); ${isCurrent ? '' : `App.quickLogin('${esc(acc.username)}', '123456')`}">
-              <span>${isCurrent ? '● ' : ''}${esc(acc.full_name)}</span>
-              <span class="role-badge ${acc.role === 'admin' ? 'admin' : acc.role === 'manager' ? 'manager' : 'sale'}">${rLabel}</span>
-            </button>
-          `;
-        }).join('');
       }
     }
 
@@ -2966,12 +2910,7 @@ const App = (() => {
                               🗑
                             </button>
                           ` : ''}
-                        ` : ''}
-                        ${!isSelf && u.is_active ? `
-                          <button class="btn btn-sm" onclick="App.quickLogin('${esc(u.username)}', '123456')" title="Đăng nhập nhanh sang tài khoản này (MK mặc định: 123456)">
-                            ⚡ Chuyển TK
-                          </button>
-                        ` : ''}
+                        ` : '<span style="font-size:12px;color:var(--muted)">—</span>'}
                       </div>
                     </td>
                   </tr>
@@ -3344,7 +3283,6 @@ const App = (() => {
 
   return {
     submitLogin,
-    quickLogin,
     toggleLoginPassVisibility,
     logout,
     toggleUserDropdown,

@@ -76,7 +76,6 @@ function sanitizeUser(userRow) {
 }
 
 function getAuthenticatedUser(req, parsedUrl) {
-  // 1. Check Bearer token in Authorization header or query param (?token=...)
   let token = '';
   const authHeader = req.headers['authorization'] || '';
   if (authHeader.startsWith('Bearer ')) {
@@ -93,13 +92,6 @@ function getAuthenticatedUser(req, parsedUrl) {
       const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(sess.user_id);
       if (user) return { user, permissions: parseUserPermissions(user), token };
     }
-  }
-
-  // Fallback for legacy x-username header if used by internal CLI script
-  const headerUser = req.headers['x-username'];
-  if (headerUser) {
-    const user = db.prepare('SELECT * FROM users WHERE username = ? AND is_active = 1').get(headerUser);
-    if (user) return { user, permissions: parseUserPermissions(user), token: null };
   }
 
   return null;
@@ -167,13 +159,6 @@ const server = http.createServer(async (req, res) => {
     // =========================================================================
     // PUBLIC AUTH ROUTES (No token required)
     // =========================================================================
-    if (pathname === '/api/auth/demo-accounts' && method === 'GET') {
-      const users = db.prepare('SELECT id, username, full_name, role, title_vi, is_active, permissions_json FROM users ORDER BY id ASC').all();
-      return sendJson(res, 200, {
-        accounts: users.map(u => sanitizeUser(u))
-      });
-    }
-
     if (pathname === '/api/auth/login' && method === 'POST') {
       const body = await readJsonBody(req);
       const username = String(body.username || '').trim();

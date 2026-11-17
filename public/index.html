@@ -11,71 +11,268 @@
 <body>
 
   <!-- =========================================================================
-       LOGIN OVERLAY SCREEN
+       ENTERPRISE LOGIN OVERLAY SCREEN (PRODUCTION)
        ========================================================================= -->
   <div id="loginOverlay" class="login-overlay hidden">
     <div class="login-card">
-      <div class="login-left">
+      <!-- Left: Corporate Branding & Animated Scrubber Tower Schematic -->
+      <div class="login-hero-panel">
+        <div>
+          <div class="login-hero-badge">
+            <span>協和化工株式会社</span>
+            <span>•</span>
+            <span>KYOWA KAKO VIET NAM</span>
+          </div>
+
+          <h2 class="login-hero-title">
+            Hệ Thống Quản Lý Cấu Hình &amp; Báo Giá Kỹ Thuật
+          </h2>
+          <p class="login-hero-desc">
+            Mô hình chuẩn hóa hệ thống tháp xử lý khí thải công nghiệp, quạt hút, bơm tuần hoàn.
+          </p>
+
+          <!-- Animated Technical Blueprint of Kyowa Kako Scrubber System -->
+          <div class="tower-blueprint-box">
+            <div class="blueprint-top-meta">
+              <span>CAD SCHEMATIC // WET SCRUBBER SYSTEM</span>
+              <div class="blueprint-series-tags">
+                <span>FSD</span>
+                <span>FSW</span>
+                <span>EMR-HR</span>
+              </div>
+            </div>
+
+            <svg class="scrubber-svg" viewBox="0 0 430 270" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="towerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#1e3a8a" stop-opacity="0.55" />
+                  <stop offset="50%" stop-color="#0284c7" stop-opacity="0.28" />
+                  <stop offset="100%" stop-color="#1e3a8a" stop-opacity="0.6" />
+                </linearGradient>
+                <linearGradient id="waterGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.65" />
+                  <stop offset="100%" stop-color="#0284c7" stop-opacity="0.85" />
+                </linearGradient>
+                <linearGradient id="cleanAirGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+                  <stop offset="0%" stop-color="#34d399" stop-opacity="0.8" />
+                  <stop offset="100%" stop-color="#34d399" stop-opacity="0" />
+                </linearGradient>
+              </defs>
+
+              <!-- Base Ground Line -->
+              <line x1="15" y1="246" x2="415" y2="246" stroke="#475569" stroke-width="2" />
+
+              <!-- 1. STAGE & LADDER (Hệ sắt Stage, Sàn thao tác & Cầu thang) -->
+              <g stroke="#64748b" stroke-width="1.2" opacity="0.8">
+                <!-- Left Ladder -->
+                <line x1="142" y1="58" x2="142" y2="246" />
+                <line x1="150" y1="58" x2="150" y2="246" />
+                <line x1="142" y1="75" x2="150" y2="75" />
+                <line x1="142" y1="92" x2="150" y2="92" />
+                <line x1="142" y1="109" x2="150" y2="109" />
+                <line x1="142" y1="126" x2="150" y2="126" />
+                <line x1="142" y1="143" x2="150" y2="143" />
+                <line x1="142" y1="160" x2="150" y2="160" />
+                <line x1="142" y1="177" x2="150" y2="177" />
+                <line x1="142" y1="194" x2="150" y2="194" />
+                <line x1="142" y1="211" x2="150" y2="211" />
+                <line x1="142" y1="228" x2="150" y2="228" />
+                <!-- Upper Maintenance Platform (Sàn thao tác) -->
+                <rect x="138" y="64" width="144" height="4" fill="#475569" />
+                <line x1="138" y1="50" x2="282" y2="50" stroke-dasharray="2 2" />
+                <line x1="138" y1="50" x2="138" y2="64" />
+                <line x1="282" y1="50" x2="282" y2="64" />
+              </g>
+
+              <!-- 2. MAIN SCRUBBER TOWER (洗浄塔 Tháp xử lý FRP) -->
+              <!-- Top Exhaust Stack (Ống khói φ350 x 850H) -->
+              <rect x="194" y="22" width="32" height="30" fill="url(#towerGrad)" stroke="#38bdf8" stroke-width="1.6" />
+              <line x1="189" y1="22" x2="231" y2="22" stroke="#38bdf8" stroke-width="2" />
+              <!-- Clean Air Rising Arrows -->
+              <path d="M203 20 L203 4 M210 18 L210 2 M217 20 L217 4" stroke="#34d399" stroke-width="2"
+                class="flow-gas-clean" />
+              <polygon points="210,1 206,7 214,7" fill="#34d399" />
+
+              <!-- Conical Top Transition -->
+              <polygon points="194,52 226,52 254,68 166,68" fill="url(#towerGrad)" stroke="#38bdf8"
+                stroke-width="1.6" />
+
+              <!-- Cylindrical Tower Body (φ800 x 4950H FRP) -->
+              <rect x="166" y="68" width="88" height="178" rx="3" fill="url(#towerGrad)" stroke="#38bdf8"
+                stroke-width="1.8" />
+
+              <!-- Demister Layer (Tầng tách ẩm) -->
+              <rect x="170" y="76" width="80" height="10" fill="rgba(52, 211, 153, 0.22)" stroke="#34d399"
+                stroke-width="1" stroke-dasharray="3 2" />
+
+              <!-- Spray Header & Nozzles (Giàn béc phun dịch) -->
+              <line x1="174" y1="98" x2="258" y2="98" stroke="#22d3ee" stroke-width="2.2" />
+              <path
+                d="M186 98 L178 114 M186 98 L194 114 M210 98 L202 114 M210 98 L218 114 M234 98 L226 114 M234 98 L242 114"
+                stroke="#67e8f9" stroke-width="1.3" class="spray-drop" />
+
+              <!-- Packing Bed Section (Lớp vật liệu đệm hấp thụ khí) -->
+              <rect x="170" y="114" width="80" height="58" fill="rgba(14, 165, 233, 0.16)" stroke="#38bdf8"
+                stroke-width="1.2" />
+              <!-- Cross-hatch pattern inside Packing Bed -->
+              <g stroke="rgba(125, 211, 252, 0.3)" stroke-width="1">
+                <line x1="170" y1="126" x2="250" y2="126" />
+                <line x1="170" y1="140" x2="250" y2="140" />
+                <line x1="170" y1="154" x2="250" y2="154" />
+                <circle cx="184" cy="133" r="3.5" fill="none" />
+                <circle cx="202" cy="133" r="3.5" fill="none" />
+                <circle cx="220" cy="133" r="3.5" fill="none" />
+                <circle cx="236" cy="133" r="3.5" fill="none" />
+                <circle cx="192" cy="147" r="3.5" fill="none" />
+                <circle cx="210" cy="147" r="3.5" fill="none" />
+                <circle cx="228" cy="147" r="3.5" fill="none" />
+              </g>
+              <!-- Upward Gas Flow inside Tower -->
+              <path d="M195 182 L195 82 M225 182 L225 82" stroke="#a7f3d0" stroke-width="1.6" class="flow-gas-clean" />
+
+              <!-- Bottom Circulation Liquid Sump (Bồn tuần hoàn đáy tháp) -->
+              <rect x="168" y="202" width="84" height="43" fill="url(#waterGrad)" />
+              <path d="M168 202 Q189 198 210 202 T252 202" fill="none" stroke="#67e8f9" stroke-width="1.8" />
+
+              <!-- Differential Pressure Gauge (差圧計 Đồng hồ chênh áp) -->
+              <path d="M166 120 L156 120 L156 164 L166 164" fill="none" stroke="#fbbf24" stroke-width="1.2" />
+              <circle cx="156" cy="142" r="7" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+              <line x1="156" y1="142" x2="160" y2="138" stroke="#fbbf24" stroke-width="1.2" />
+
+              <!-- Level Gauge (レベル計 Đo mức bồn tuần hoàn SUS) -->
+              <path d="M166 208 L158 208 L158 238 L166 238" fill="none" stroke="#34d399" stroke-width="1.4" />
+              <line x1="158" y1="216" x2="158" y2="236" stroke="#22d3ee" stroke-width="3" />
+
+              <!-- 3. EXHAUST FAN & INLET DUCT (排気ファン Quạt hút FRP bên trái) -->
+              <!-- Inlet Gas Pipe from Fan to Tower -->
+              <path d="M114 202 L166 186 L166 196 L114 212 Z" fill="rgba(30, 58, 138, 0.6)" stroke="#38bdf8"
+                stroke-width="1.4" />
+              <path d="M42 214 L82 214 L162 190" fill="none" stroke="#fb923c" stroke-width="2" class="flow-gas-dirty" />
+
+              <!-- Fan Base & Housing -->
+              <rect x="74" y="232" width="44" height="14" fill="#334155" stroke="#64748b" stroke-width="1.2" />
+              <circle cx="96" cy="214" r="20" fill="#1e293b" stroke="#38bdf8" stroke-width="1.8" />
+              <!-- Spinning Fan Blades -->
+              <g class="fan-impeller" stroke="#38bdf8" stroke-width="1.6">
+                <circle cx="96" cy="214" r="4" fill="#22d3ee" />
+                <line x1="96" y1="197" x2="96" y2="231" />
+                <line x1="79" y1="214" x2="113" y2="214" />
+                <line x1="84" y1="202" x2="108" y2="226" />
+                <line x1="108" y1="202" x2="84" y2="226" />
+              </g>
+
+              <!-- 4. CIRCULATION PUMP & PIPING (循環ポンプ Bơm tuần hoàn & Đường ống) -->
+              <!-- Suction line from tank bottom to Pump -->
+              <path d="M254 234 L290 234" stroke="#06b6d4" stroke-width="3.5" />
+              <!-- Vertical Pump 40VO3 -->
+              <rect x="284" y="220" width="18" height="26" rx="2" fill="#0284c7" stroke="#67e8f9" stroke-width="1.4" />
+              <rect x="287" y="206" width="12" height="14" rx="2" fill="#10b981" stroke="#a7f3d0" stroke-width="1.2" />
+              <!-- Recirculation Pipe going up to Spray Header -->
+              <path d="M293 220 L293 98 L254 98" fill="none" stroke="#0e7490" stroke-width="4" />
+              <path d="M293 220 L293 98 L254 98" fill="none" stroke="#67e8f9" stroke-width="1.8" class="flow-liquid" />
+
+              <!-- 5. CHEMICAL TANK 200L, DOSING PUMP & CONTROL PANEL (Bên phải) -->
+              <!-- Chemical Tank (200L) -->
+              <rect x="330" y="198" width="38" height="48" rx="3" fill="rgba(16, 185, 129, 0.25)" stroke="#34d399"
+                stroke-width="1.5" />
+              <rect x="332" y="216" width="34" height="28" fill="rgba(16, 185, 129, 0.45)" />
+              <!-- Chemical Dosing Line to Tower Sump -->
+              <path d="M349 198 L349 184 L254 212" fill="none" stroke="#34d399" stroke-width="1.3"
+                stroke-dasharray="3 2" />
+
+              <!-- Control Panel (制御盤 Tủ điều khiển INV) -->
+              <rect x="378" y="142" width="36" height="58" rx="3" fill="#1e293b" stroke="#94a3b8" stroke-width="1.5" />
+              <rect x="383" y="149" width="26" height="12" fill="#0f172a" stroke="#38bdf8" stroke-width="1" />
+              <circle cx="388" cy="170" r="2.5" fill="#22c55e" />
+              <circle cx="396" cy="170" r="2.5" fill="#eab308" />
+              <circle cx="404" cy="170" r="2.5" fill="#ef4444" />
+
+              <!-- CALLOUT LABELS (Chú thích kỹ thuật song ngữ) -->
+              <g font-family="Segoe UI, sans-serif" font-size="9.5" font-weight="700" fill="#e2e8f0">
+                <!-- Stack label -->
+                <text x="236" y="34" fill="#6ee7b7">↑ Khí sạch (Clean Gas)</text>
+                <!-- Tower label -->
+                <text x="175" y="110" fill="#ffffff" font-size="10">洗浄塔 Tháp FRP</text>
+                <!-- Diff pressure label -->
+                <text x="68" y="145" fill="#fde68a">差圧計 Chênh áp</text>
+                <line x1="140" y1="142" x2="148" y2="142" stroke="#fde68a" stroke-width="1" />
+                <!-- Exhaust fan label -->
+                <text x="18" y="186" fill="#fdba74">排気ファン Quạt hút</text>
+                <text x="18" y="206" fill="#cbd5e1" font-size="8.5">Khí vào (CMH/Pa) →</text>
+                <!-- Pump label -->
+                <text x="272" y="261" fill="#67e8f9">循環ポンプ Bơm VO3</text>
+                <!-- Chemical Tank label -->
+                <text x="322" y="176" fill="#6ee7b7" font-size="8.8">Chemical 200L</text>
+                <text x="322" y="188" fill="#6ee7b7" font-size="8.8">+ Đo pH (pH計)</text>
+                <!-- Panel label -->
+                <text x="366" y="135" fill="#bae6fd">制御盤 Tủ INV</text>
+              </g>
+            </svg>
+
+            <div class="blueprint-legend">
+              <span><i class="legend-dot" style="background:#fb923c"></i>Khí thải đầu vào</span>
+              <span><i class="legend-dot" style="background:#22d3ee"></i>Tuần hoàn dịch hấp thụ</span>
+              <span><i class="legend-dot" style="background:#34d399"></i>Khí sạch đạt chuẩn</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="login-hero-footer">
+          <span>KYOWA KAKO VIET NAM CO., LTD</span>
+          <span>Scrubber Engineering Portal</span>
+        </div>
+      </div>
+
+      <!-- Right: Clean Production Login Form -->
+      <div class="login-form-panel">
         <div class="login-brand">
           <img src="/assets/kkvn_logo.jpg" alt="KKVN Logo">
           <div>
             <h2>KYOWA KAKO VIỆT NAM</h2>
-            <p>Hệ Thống Quản Lý Cấu Hình & Lập Báo Giá</p>
+            <p>Phòng Kinh Doanh &amp; Kỹ Thuật Dự Án</p>
           </div>
         </div>
 
-        <h3 style="margin: 0 0 6px; font-size: 20px; color: var(--navy-dark);">Đăng nhập hệ thống</h3>
-        <p style="margin: 0 0 18px; font-size: 13px; color: var(--muted);">
-          Nhập tài khoản được cấp để truy cập theo phân quyền (Admin / Quản lý / Sale).
+        <h3 class="login-form-heading">Đăng nhập hệ thống</h3>
+        <p class="login-form-sub">
+          Vui lòng sử dụng tài khoản nội bộ đã được cấp quyền truy cập.
         </p>
 
         <div id="loginErrorBox" class="alert-box alert-warn hidden"
           style="color: var(--red); border-color: #fca5a5; background: #fff5f5;"></div>
 
         <form onsubmit="App.submitLogin(event)">
-          <label class="field" style="margin-bottom: 14px;">
-            Tên đăng nhập (Username)
-            <input type="text" id="loginUsername" placeholder="VD: baotruong, yamanaka, camtu..." required
-              autocomplete="username" style="padding: 10px 12px; font-size: 14px;">
-          </label>
+          <div class="login-input-group">
+            <label for="loginUsername">Tên đăng nhập</label>
+            <div class="login-input-wrap">
 
-          <label class="field" style="margin-bottom: 18px;">
-            Mật khẩu
-            <div style="display:flex; gap:6px;">
-              <input type="password" id="loginPassword" placeholder="Nhập mật khẩu..." required
-                autocomplete="current-password" style="flex:1; padding: 10px 12px; font-size: 14px;">
-              <button type="button" class="btn btn-sm" onclick="App.toggleLoginPassVisibility()"
-                title="Hiện/Ẩn mật khẩu">👁️</button>
+              <input type="text" id="loginUsername" placeholder="Nhập tên đăng nhập..." required
+                autocomplete="username">
             </div>
-          </label>
+          </div>
 
-          <button type="submit" class="btn btn-primary" style="width: 100%; padding: 11px; font-size: 15px;">
-            🔐 Đăng Nhập Vào Hệ Thống
+          <div class="login-input-group">
+            <label for="loginPassword">Mật khẩu</label>
+            <div class="login-input-wrap">
+
+              <input type="password" id="loginPassword" placeholder="Nhập mật khẩu..." required
+                autocomplete="current-password">
+              <button type="button" class="login-pass-toggle" id="loginPassToggleBtn"
+                onclick="App.toggleLoginPassVisibility()">
+                Hiện
+              </button>
+            </div>
+          </div>
+
+          <button type="submit" class="login-submit-btn" id="loginSubmitBtn">
+            <span>Đăng Nhập Hệ Thống</span>
+            <span>→</span>
           </button>
         </form>
-      </div>
 
-      <div class="login-right">
-        <div>
-          <div style="font-weight: 700; color: var(--navy); font-size: 14px; margin-bottom: 6px;">
-            ⚡ Đăng nhập nhanh (Kiểm thử Phân quyền)
-          </div>
-          <p style="font-size: 12px; color: var(--muted); margin: 0 0 12px;">
-            Mật khẩu mặc định của các tài khoản mẫu là <code>123456</code>. Nhấn vào nút bên dưới để đăng nhập ngay với
-            vai trò tương ứng:
-          </p>
-          <div id="demoAccountsContainer"></div>
-        </div>
+        <div class="login-security-note">
 
-        <div
-          style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #1e3a8a; margin-top: 12px;">
-          <strong>Cơ chế bảo mật & phân quyền (RBAC):</strong>
-          <ul style="margin: 4px 0 0 16px; padding: 0;">
-            <li><strong>Admin / Quản lý:</strong> Xem được Giá Cost nội bộ, Duyệt báo giá, Quản lý danh mục & Phân quyền
-              tài khoản.</li>
-            <li><strong>Nhân viên Sale:</strong> Chỉ xem Giá Cơ Bản (ẩn hoàn toàn Giá Cost), lập & xuất báo giá PDF.
-            </li>
-          </ul>
+          Nếu quên mật khẩu hoặc cần cấp quyền, vui lòng liên hệ Quản trị viên.
         </div>
       </div>
     </div>
@@ -91,19 +288,21 @@
         <div class="brand-title">
           <h1>KYOWA KAKO VIỆT NAM</h1>
           <span class="brand-divider">|</span>
-          <span class="brand-subtitle">Hệ Thống Tra Cứu Cấu Hình & Lập Báo Giá (FSD · FSW · EMR HR)</span>
+          <span class="brand-subtitle">Hệ Thống Tra Cứu Cấu Hình &amp; Lập Báo Giá (FSD · FSW · EMR HR)</span>
         </div>
       </div>
 
       <div class="header-controls">
-
+        <div id="permHeaderChip" class="perm-indicator-chip">
+          ✅ Xem Giá Cost &amp; Duyệt BG
+        </div>
 
         <!-- User Account Dropdown -->
         <div class="user-menu-wrap" id="userMenuWrap">
           <button type="button" class="user-profile-trigger" onclick="App.toggleUserDropdown(event)">
             <div class="user-avatar" id="headerAvatar">K</div>
             <div class="user-trigger-text">
-              <span class="user-trigger-name" id="headerUserName">Đang tải...</span>
+              <span class="user-trigger-name" id="headerUserName">Tài khoản</span>
               <span id="roleBadge" class="role-badge admin">QUẢN LÝ</span>
             </div>
             <span class="user-caret">▾</span>
@@ -111,18 +310,16 @@
 
           <div id="userDropdownMenu" class="user-dropdown-menu hidden">
             <div class="dropdown-user-header">
-              <div style="font-weight:700; color:var(--navy-dark); font-size:13.5px;" id="dropdownFullName">Mr Bảo
-                Trường</div>
-              <div style="font-size:12px; color:var(--muted); margin-top:2px;" id="dropdownUserTitle">Quản lý Kinh doanh
-              </div>
+              <div style="font-weight:700; color:var(--navy-dark); font-size:13.5px;" id="dropdownFullName">—</div>
+              <div style="font-size:12px; color:var(--muted); margin-top:2px;" id="dropdownUserTitle">—</div>
               <div style="font-size:11.5px; color:var(--green-dark); font-weight:600; margin-top:4px;"
                 id="dropdownPermHint">
-                Quyền: Xem Giá Cost · Duyệt BG · Quản lý TK
+                —
               </div>
             </div>
 
             <button type="button" class="dropdown-item" onclick="App.closeUserDropdown(); App.showTab('users')">
-              <span>👥 Quản lý Tài khoản & Phân quyền</span>
+              <span>👥 Quản lý Tài khoản &amp; Phân quyền</span>
             </button>
             <button type="button" class="dropdown-item"
               onclick="App.closeUserDropdown(); App.openChangePasswordModal()">
@@ -130,12 +327,8 @@
             </button>
 
             <div class="dropdown-divider"></div>
-            <div class="dropdown-section-label">Chuyển nhanh tài khoản (Demo)</div>
-            <div id="dropdownQuickSwitchList"></div>
-
-            <div class="dropdown-divider"></div>
             <button type="button" class="dropdown-item danger" onclick="App.closeUserDropdown(); App.logout()">
-              <span>🚪 Đăng xuất</span>
+              <span>🚪 Đăng xuất khỏi hệ thống</span>
             </button>
           </div>
         </div>
@@ -145,7 +338,7 @@
     <!-- NAVIGATION TABS -->
     <nav class="nav-bar">
       <button class="nav-tab active" id="tabBtn-flow1" onclick="App.showTab('flow1')">
-        <span>📝 1. Báo Giá Cơ Bản</span>
+        <span>⚡ 1. Báo Giá Cơ Bản</span>
       </button>
       <button class="nav-tab" id="tabBtn-flow2" onclick="App.showTab('flow2')">
         <span>📝 2. Báo Giá Chi Tiết</span>
@@ -155,15 +348,15 @@
         <span>🖨️ 3. Bản In / Xuất PDF (A4)</span>
       </button>
       <button class="nav-tab" id="tabBtn-quotes" onclick="App.showTab('quotes')">
-        <span>📁 4. Hồ Sơ & Phê Duyệt</span>
+        <span>📁 4. Hồ Sơ &amp; Phê Duyệt</span>
         <span class="nav-badge" id="quotesCountBadge">0</span>
       </button>
       <button class="nav-tab" id="tabBtn-catalog" onclick="App.showTab('catalog')">
-        <span>🗂️ 5. Danh Mục & Excel</span>
+        <span>🗂️ 5. Danh Mục &amp; Excel</span>
         <span class="nav-badge" id="modelsCountBadge">64</span>
       </button>
       <button class="nav-tab" id="tabBtn-users" onclick="App.showTab('users')">
-        <span>👥 6. Tài Khoản & Phân Quyền</span>
+        <span>👥 6. Tài Khoản &amp; Phân Quyền</span>
         <span class="nav-badge" id="usersCountBadge">4</span>
       </button>
     </nav>
