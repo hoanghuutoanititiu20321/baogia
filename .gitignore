@@ -1,0 +1,16 @@
+# Tài liệu từ khách hàng (không push lên Git)
+tài_liệu_từ_khách_hàng/
+
+# Dependencies & Environment
+node_modules/
+.env
+.env.*
+
+# SQLite temporary WAL/SHM files
+*.sqlite-shm
+*.sqlite-wal
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+*.log

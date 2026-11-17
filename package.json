@@ -1,0 +1,9 @@
+{
+  "name": "kyowa-kako-baogia-app",
+  "version": "1.0.0",
+  "description": "Ứng dụng Tra cứu Cấu hình & Lập Báo giá Hệ thống Tháp Xử lý Khí, Thiết bị & Dịch vụ - Kyowa Kako Việt Nam (KKVN)",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node --no-warnings server/index.js"
+  }
+}
