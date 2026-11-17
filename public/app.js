@@ -1,8 +1,20 @@
 const App = (() => {
   let state = {
+    authToken: localStorage.getItem('kkvn_auth_token') || '',
     currentUser: null,
-    permissions: { canViewCost: true, canManageCatalog: true, canApproveQuote: true },
+    permissions: {
+      canViewCost: false,
+      canApproveQuote: false,
+      canManageCatalog: false,
+      canManageUsers: false,
+      canViewAllQuotes: true,
+      canDeleteQuote: false,
+      canExportExcel: false
+    },
     users: [],
+    usersAdminList: [],
+    auditLogs: [],
+    rolePresets: {},
     models: [],
     equipment: [],
     quotations: [],
@@ -21,14 +33,33 @@ const App = (() => {
     activeQuote: null,
     revisionsList: [],
 
-    // Catalog filter state
+    // Catalog & filter state
     catFilterProd: 'ALL',
     equipFilterCat: 'ALL',
     quoteSearch: '',
-    quoteStatusFilter: 'ALL'
+    quoteStatusFilter: 'ALL',
+
+    // Editing user modal state
+    editingUser: null
   };
 
-  // Number formatting helpers
+  const PERM_DEFINITIONS = [
+    { key: 'canViewCost', label: 'Xem Giá Cost nội bộ & Biên lợi nhuận', desc: 'Hiển thị cột Giá Cost (Sheet 1 Excel) và lợi nhuận gộp trong Báo giá cơ bản, Báo giá chi tiết & Danh mục.' },
+    { key: 'canApproveQuote', label: 'Phê duyệt / Từ chối Báo giá', desc: 'Cho phép bấm nút Phê duyệt báo giá (Duyệt giá báo) hoặc yêu cầu chỉnh sửa.' },
+    { key: 'canManageCatalog', label: 'Quản lý Danh mục & Đồng bộ Excel', desc: 'Thêm/sửa/xóa Model tháp, Thiết bị đo, Quạt, Bơm, Dịch vụ và Import file Data báo giá.xlsx.' },
+    { key: 'canManageUsers', label: 'Quản lý Tài khoản & Phân quyền', desc: 'Tạo tài khoản mới, cấp/thu hồi quyền hạn, đặt lại mật khẩu và khóa/mở khóa tài khoản.' },
+    { key: 'canViewAllQuotes', label: 'Xem Báo giá của tất cả nhân viên', desc: 'Nếu tắt, nhân viên chỉ nhìn thấy các báo giá do chính mình lập hoặc đứng tên phụ trách (PIC).' },
+    { key: 'canDeleteQuote', label: 'Xóa Hồ sơ Báo giá', desc: 'Cho phép xóa báo giá khỏi cơ sở dữ liệu.' },
+    { key: 'canExportExcel', label: 'Xuất dữ liệu Bảng giá ra Excel (.xlsx)', desc: 'Cho phép tải xuống file Excel danh mục gồm cả Giá Cost & Giá Cơ Bản.' }
+  ];
+
+  const ROLE_LABELS = {
+    admin: 'Admin / Giám Đốc',
+    manager: 'Quản lý Kinh doanh',
+    sale: 'Nhân viên Kinh doanh (Sale)',
+    sale_own: 'Sale (Chỉ xem BG cá nhân)'
+  };
+
   const fmtVnd = (n) => {
     if (n === null || n === undefined || n === '' || isNaN(n)) return '—';
     return Math.round(Number(n)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -63,11 +94,15 @@ const App = (() => {
   async function api(path, options = {}) {
     const headers = {
       'Content-Type': 'application/json',
-      'x-username': state.currentUser?.username || localStorage.getItem('kkvn_user') || 'baotruong',
+      ...(state.authToken ? { 'Authorization': `Bearer ${state.authToken}` } : {}),
       ...(options.headers || {})
     };
     const res = await fetch(path, { ...options, headers });
     const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && !path.includes('/api/auth/login')) {
+      showLoginScreen();
+      throw new Error(data.error || 'Vui lòng đăng nhập.');
+    }
     if (!res.ok) {
       throw new Error(data.error || `Lỗi HTTP ${res.status}`);
     }
@@ -75,23 +110,174 @@ const App = (() => {
   }
 
   // ===========================================================================
-  // INITIALIZATION & ROLE SWITCHING
+  // AUTHENTICATION & LOGIN FLOW
   // ===========================================================================
   async function init() {
+    await loadDemoAccountsForLogin();
+    if (!state.authToken) {
+      showLoginScreen();
+      return;
+    }
     try {
-      const savedUser = localStorage.getItem('kkvn_user') || 'baotruong';
-      state.currentUser = { username: savedUser };
       await loadBootstrap();
+      hideLoginScreen();
       if (state.quotations.length > 0 && !state.activeQuote) {
         state.activeQuote = JSON.parse(JSON.stringify(state.quotations[0]));
       }
       renderAll();
     } catch (err) {
-      console.error(err);
-      toast('Lỗi khởi tạo dữ liệu: ' + err.message);
+      console.warn('Session invalid or expired:', err.message);
+      showLoginScreen();
     }
   }
 
+  async function loadDemoAccountsForLogin() {
+    try {
+      const res = await fetch('/api/auth/demo-accounts');
+      const data = await res.json();
+      const box = document.getElementById('demoAccountsContainer');
+      if (!box || !data.accounts) return;
+
+      box.innerHTML = data.accounts.map(acc => {
+        const roleClass = acc.role === 'admin' ? 'admin' : acc.role === 'manager' ? 'manager' : 'sale';
+        return `
+          <div class="demo-acc-item">
+            <div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <strong style="color:var(--navy-dark)">${esc(acc.full_name)}</strong>
+                <span class="role-badge ${roleClass}">${esc(ROLE_LABELS[acc.role] || acc.role)}</span>
+                ${!acc.is_active ? '<span class="status-pill status-rejected">Đã khóa</span>' : ''}
+              </div>
+              <div style="font-size:11.5px;color:var(--muted);margin-top:2px;">
+                User: <code>${esc(acc.username)}</code> · ${acc.permissions?.canViewCost ? '✅ Xem Giá Cost & Duyệt BG' : '🔒 Ẩn Giá Cost'}
+              </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-navy"
+                    onclick="App.quickLogin('${esc(acc.username)}', '123456')"
+                    ${!acc.is_active ? 'disabled' : ''}>
+              Đăng nhập →
+            </button>
+          </div>
+        `;
+      }).join('');
+    } catch (err) {
+      console.error('Error loading demo accounts:', err);
+    }
+  }
+
+  function showLoginScreen(errorMsg = '') {
+    const overlay = document.getElementById('loginOverlay');
+    if (overlay) overlay.classList.remove('hidden');
+    const errBox = document.getElementById('loginErrorBox');
+    if (errBox) {
+      if (errorMsg) {
+        errBox.textContent = errorMsg;
+        errBox.classList.remove('hidden');
+      } else {
+        errBox.classList.add('hidden');
+      }
+    }
+    loadDemoAccountsForLogin();
+  }
+
+  function hideLoginScreen() {
+    document.getElementById('loginOverlay')?.classList.add('hidden');
+  }
+
+  function toggleLoginPassVisibility() {
+    const inp = document.getElementById('loginPassword');
+    if (!inp) return;
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+  }
+
+  async function submitLogin(e) {
+    if (e) e.preventDefault();
+    const username = document.getElementById('loginUsername')?.value.trim();
+    const password = document.getElementById('loginPassword')?.value || '';
+    await performLogin(username, password);
+  }
+
+  async function quickLogin(username, password) {
+    const uInp = document.getElementById('loginUsername');
+    const pInp = document.getElementById('loginPassword');
+    if (uInp) uInp.value = username;
+    if (pInp) pInp.value = password;
+    await performLogin(username, password);
+  }
+
+  async function performLogin(username, password) {
+    try {
+      const data = await api('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password })
+      });
+      state.authToken = data.token;
+      localStorage.setItem('kkvn_auth_token', data.token);
+      state.currentUser = data.user;
+      state.permissions = data.permissions;
+
+      hideLoginScreen();
+      await loadBootstrap();
+      if (state.quotations.length > 0) {
+        state.activeQuote = JSON.parse(JSON.stringify(state.quotations[0]));
+      }
+      renderAll();
+      toast(`Xin chào ${state.currentUser.full_name} (${ROLE_LABELS[state.currentUser.role] || state.currentUser.role})!`);
+    } catch (err) {
+      showLoginScreen(err.message);
+    }
+  }
+
+  async function logout() {
+    try {
+      if (state.authToken) {
+        await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
+      }
+    } finally {
+      state.authToken = '';
+      state.currentUser = null;
+      localStorage.removeItem('kkvn_auth_token');
+      showLoginScreen();
+      toast('Đã đăng xuất khỏi hệ thống.');
+    }
+  }
+
+  function openChangePasswordModal() {
+    document.getElementById('cpCurrent').value = '';
+    document.getElementById('cpNew').value = '';
+    document.getElementById('cpConfirm').value = '';
+    document.getElementById('changePassModal')?.classList.remove('hidden');
+  }
+
+  function closeChangePasswordModal() {
+    document.getElementById('changePassModal')?.classList.add('hidden');
+  }
+
+  async function submitChangePassword(e) {
+    e.preventDefault();
+    const currentPassword = document.getElementById('cpCurrent').value;
+    const newPassword = document.getElementById('cpNew').value;
+    const confirmPassword = document.getElementById('cpConfirm').value;
+
+    if (newPassword !== confirmPassword) {
+      toast('Mật khẩu mới và xác nhận mật khẩu không khớp!');
+      return;
+    }
+    try {
+      await api('/api/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      closeChangePasswordModal();
+      toast('Đã đổi mật khẩu thành công!');
+    } catch (err) {
+      toast('Lỗi: ' + err.message);
+    }
+  }
+
+  // ===========================================================================
+  // BOOTSTRAP & HEADER SYNC
+  // ===========================================================================
   async function loadBootstrap() {
     const data = await api('/api/bootstrap');
     state.currentUser = data.currentUser;
@@ -101,40 +287,72 @@ const App = (() => {
     state.equipment = data.equipment_catalog || [];
     state.quotations = data.quotations || [];
 
-    // Update header user selector
-    const sel = document.getElementById('userSelect');
-    if (sel) {
-      sel.innerHTML = state.users.map(u =>
-        `<option value="${esc(u.username)}" ${u.username === state.currentUser.username ? 'selected' : ''}>
-          ${esc(u.full_name)} (${u.role === 'sale' ? 'Sale - Ẩn Cost' : 'Quản lý - Xem Cost & Duyệt'})
-        </option>`
-      ).join('');
-    }
-    const badge = document.getElementById('roleBadge');
-    if (badge) {
-      const isMgr = state.permissions.canViewCost;
-      badge.className = `role-badge ${isMgr ? 'admin' : 'sale'}`;
-      badge.textContent = isMgr ? 'QUẢN LÝ / ADMIN' : 'NHÂN VIÊN';
+    // Update Header user info & Dropdown menu
+    const u = state.currentUser;
+    if (u) {
+      const avatar = document.getElementById('headerAvatar');
+      if (avatar) avatar.textContent = (u.full_name || u.username || 'U').trim().charAt(0).toUpperCase();
+      const nameEl = document.getElementById('headerUserName');
+      if (nameEl) nameEl.textContent = u.full_name;
+      const badge = document.getElementById('roleBadge');
+      if (badge) {
+        const rClass = u.role === 'admin' ? 'admin' : u.role === 'manager' ? 'manager' : 'sale';
+        badge.className = `role-badge ${rClass}`;
+        badge.textContent = u.role === 'admin' ? 'ADMIN' : u.role === 'manager' ? 'QUẢN LÝ' : 'SALE';
+      }
+
+      const permChip = document.getElementById('permHeaderChip');
+      if (permChip) {
+        permChip.innerHTML = state.permissions.canViewCost
+          ? '✅ Xem Giá Cost & Duyệt BG'
+          : '🔒 Chế độ Sale: Ẩn Giá Cost';
+      }
+
+      const ddName = document.getElementById('dropdownFullName');
+      if (ddName) ddName.textContent = `${u.full_name} (@${u.username})`;
+      const ddTitle = document.getElementById('dropdownUserTitle');
+      if (ddTitle) ddTitle.textContent = `${u.title_vi || 'Nhân viên'} · ${u.phone || ''}`;
+      const ddPerm = document.getElementById('dropdownPermHint');
+      if (ddPerm) {
+        const activePerms = [];
+        if (state.permissions.canViewCost) activePerms.push('Xem Cost');
+        if (state.permissions.canApproveQuote) activePerms.push('Duyệt BG');
+        if (state.permissions.canManageCatalog) activePerms.push('Sửa Danh mục');
+        if (state.permissions.canManageUsers) activePerms.push('QL Tài khoản');
+        ddPerm.textContent = activePerms.length > 0
+          ? `Quyền: ${activePerms.join(' · ')}`
+          : 'Quyền: Lập & Xuất Báo Giá (Ẩn Giá Cost)';
+      }
+
+      const ddSwitch = document.getElementById('dropdownQuickSwitchList');
+      if (ddSwitch && state.users) {
+        ddSwitch.innerHTML = state.users.filter(acc => acc.is_active).map(acc => {
+          const isCurrent = acc.username === u.username;
+          const rLabel = acc.role === 'admin' ? 'Admin' : acc.role === 'manager' ? 'Quản lý' : 'Sale';
+          return `
+            <button type="button" class="dropdown-item ${isCurrent ? 'active-acc' : ''}"
+                    onclick="App.closeUserDropdown(); ${isCurrent ? '' : `App.quickLogin('${esc(acc.username)}', '123456')`}">
+              <span>${isCurrent ? '● ' : ''}${esc(acc.full_name)}</span>
+              <span class="role-badge ${acc.role === 'admin' ? 'admin' : acc.role === 'manager' ? 'manager' : 'sale'}">${rLabel}</span>
+            </button>
+          `;
+        }).join('');
+      }
     }
 
     document.getElementById('quotesCountBadge').textContent = state.quotations.length;
     document.getElementById('modelsCountBadge').textContent = state.models.length;
+    document.getElementById('usersCountBadge').textContent = state.users.length;
 
     if (state.activeQuote && state.activeQuote.id) {
       const refreshed = state.quotations.find(q => q.id === state.activeQuote.id);
       if (refreshed) {
         state.activeQuote = JSON.parse(JSON.stringify(refreshed));
+      } else if (state.quotations.length > 0) {
+        state.activeQuote = JSON.parse(JSON.stringify(state.quotations[0]));
       }
     }
     updateActiveQuoteBadge();
-  }
-
-  async function switchUser(username) {
-    localStorage.setItem('kkvn_user', username);
-    state.currentUser = { username };
-    await loadBootstrap();
-    renderAll();
-    toast(`Đã chuyển sang tài khoản: ${state.currentUser.full_name}`);
   }
 
   function updateActiveQuoteBadge() {
@@ -146,7 +364,7 @@ const App = (() => {
 
   function showTab(tabName) {
     state.activeTab = tabName;
-    ['flow1', 'flow2', 'print', 'quotes', 'catalog'].forEach(t => {
+    ['flow1', 'flow2', 'print', 'quotes', 'catalog', 'users'].forEach(t => {
       document.getElementById(`view-${t}`)?.classList.toggle('hidden', t !== tabName);
       document.getElementById(`tabBtn-${t}`)?.classList.toggle('active', t === tabName);
     });
@@ -155,6 +373,7 @@ const App = (() => {
     if (tabName === 'print') renderPrintView();
     if (tabName === 'quotes') renderQuotesList();
     if (tabName === 'catalog') renderCatalogView();
+    if (tabName === 'users') loadAndRenderUsersTab();
   }
 
   function renderAll() {
@@ -163,6 +382,9 @@ const App = (() => {
     renderPrintView();
     renderQuotesList();
     renderCatalogView();
+    if (state.activeTab === 'users') {
+      loadAndRenderUsersTab();
+    }
   }
 
   // ===========================================================================
@@ -188,7 +410,6 @@ const App = (() => {
     const showCost = state.permissions.canViewCost;
     const defaultInstruments = state.equipment.filter(e => e.category === 'instrument' && e.is_default_included);
 
-    // Flow rate recommendation if user enters required flow
     const reqFlow = parseFloat(state.f1.flowSearch);
     let recommendedModels = [];
     if (!isNaN(reqFlow) && reqFlow > 0) {
@@ -242,7 +463,7 @@ const App = (() => {
     container.innerHTML = `
       <div class="card">
         <div class="card-header">
-          <h2 class="card-title">Tra Cứu Cấu Hình & Báo Giá Cơ Bản</h2>
+          <h2 class="card-title">Luồng 1 – Tra Cứu Cấu Hình & Báo Giá Cơ Bản</h2>
           <div class="row">
             <button class="btn btn-primary" onclick="App.startDetailedFromF1('tower_bundle')">
               Chuyển sang Báo Giá Chi Tiết (Gộp 1 Set – Mẫu Taikisha) →
@@ -348,13 +569,12 @@ const App = (() => {
               <li><strong>Thiết bị đi kèm mặc định (Đã tính trong giá Hệ tháp):</strong>
                 ${defaultInstruments.map(d => `<span class="tag-included">${esc(d.name_vi)} x ${d.default_qty}</span>`).join(' ')}
               </li>
-              <li><strong>Chưa bao gồm:</strong> Chi phí vận chuyển và chi phí lắp đặt tại công trình (sẽ được bổ sung tại <em>Báo giá chi tiết</em>).</li>
+              <li><strong>Chưa bao gồm:</strong> Chi phí vận chuyển và chi phí lắp đặt tại công trình (sẽ được bổ sung tại <em>Luồng 2 – Báo giá chi tiết</em>).</li>
             </ul>
           </div>
         ` : ''}
       </div>
 
-      <!-- BẢNG SO SÁNH TẤT CẢ MODEL TRONG DÒNG SẢN PHẨM ĐANG CHỌN -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">Bảng Đối Chiếu Toàn Bộ Model Thuộc Dòng ${esc(state.f1.productLine)} (${modelsInLine.length} model)</h3>
@@ -430,7 +650,6 @@ const App = (() => {
     renderFlow1();
   }
 
-  // Convert Flow 1 model selection into a Flow 2 Detailed Quotation
   function startDetailedFromF1(mode = 'tower_bundle') {
     const m = getSelectedF1Model();
     if (!m) return;
@@ -442,7 +661,6 @@ const App = (() => {
     const prodSlug = m.product_line.replace(/\s+/g, '-').replace(/L$/, '');
     const towerTitleCode = `${prodSlug.split('-')[0]}-${m.model_code}-${prodSlug.split('-')[1] || '1.0'}`;
 
-    // Production sum (excluding 5% management fee so it's separated cleanly to Section B by default!)
     const prodCostSum = (m.tower_cost || 0) + (m.fan_cost || 0) + (m.pump_cost || 0) + (m.panel_cost || 0) + (m.stage_cost || 0);
     const prodBaseSum = (m.tower_base || 0) + (m.fan_base || 0) + (m.pump_base || 0) + (m.panel_base || 0) + (m.stage_base || 0);
 
@@ -472,13 +690,6 @@ const App = (() => {
               unit_price: prodBaseSum,
               total_price: prodBaseSum,
               remark: 'KYOWA VN',
-              breakdown: [
-                { label: `Hệ tháp ${m.product_line} - Model ${m.model_code} (${m.flow_rate} m³/min)`, cost: m.tower_cost, base: m.tower_base, adj: 0 },
-                { label: `Quạt hút ${m.fan_model} (${m.motor_kw} kW, ${m.fan_pressure_pa} Pa)`, cost: m.fan_cost, base: m.fan_base, adj: 0 },
-                { label: `Bơm tuần hoàn ${m.pump_model}`, cost: m.pump_cost, base: m.pump_base, adj: 0 },
-                { label: 'Tủ điều khiển, đấu dây', cost: m.panel_cost, base: m.panel_base, adj: 0 },
-                { label: 'Hệ sắt Stage, Ladder, sàn thao tác', cost: m.stage_cost, base: m.stage_base, adj: 0 }
-              ],
               sub_lines: [
                 { text: '込む Bao gồm :', right_text: '', remark: '', is_header: true },
                 { text: `- Stage,Ladder, 煙thang,sàn thao tác, ống khói: ${m.specs?.stack_dim || 'φ 350 x 850 H'}`, right_text: '', remark: '' },
@@ -504,58 +715,30 @@ const App = (() => {
           bundleMode: 'itemized',
           items: [
             {
-              id: 'item-b1',
-              stt: '1',
-              item_type: 'service_mgmt',
-              name_jp: '現場管理・設計・試運転費',
-              name_vi: 'Thiết kế, quản lí, vận hành',
-              specs_text: '',
-              unit: 'Lot/Lần',
-              quantity: 1,
-              cost_price: m.mgmt_cost || 0,
-              base_price: m.mgmt_base || 0,
-              adjustment: 0,
-              unit_price: m.mgmt_base || 0,
-              total_price: m.mgmt_base || 0,
-              remark: ''
+              id: 'item-b1', stt: '1', item_type: 'service_mgmt',
+              name_jp: '現場管理・設計・試運転費', name_vi: 'Thiết kế, quản lí, vận hành',
+              specs_text: '', unit: 'Lot/Lần', quantity: 1,
+              cost_price: m.mgmt_cost || 0, base_price: m.mgmt_base || 0, adjustment: 0,
+              unit_price: m.mgmt_base || 0, total_price: m.mgmt_base || 0, remark: ''
             },
             {
-              id: 'item-b2',
-              stt: '2',
-              item_type: 'service',
-              name_jp: '運送費',
-              name_vi: 'Vận chuyển',
-              specs_text: '',
-              unit: 'Lot/Lần',
-              quantity: 1,
-              cost_price: 18000000,
-              base_price: 26000000,
-              adjustment: 0,
-              unit_price: 26000000,
-              total_price: 26000000,
-              remark: 'ko cẩu vào vị trí'
+              id: 'item-b2', stt: '2', item_type: 'service',
+              name_jp: '運送費', name_vi: 'Vận chuyển',
+              specs_text: '', unit: 'Lot/Lần', quantity: 1,
+              cost_price: 18000000, base_price: 26000000, adjustment: 0,
+              unit_price: 26000000, total_price: 26000000, remark: 'ko cẩu vào vị trí'
             },
             {
-              id: 'item-b3',
-              stt: '3',
-              item_type: 'service',
-              name_jp: '現場設置',
-              name_vi: 'Lắp đặt tại công trình',
-              specs_text: '',
-              unit: 'Lot/Lần',
-              quantity: 1,
-              cost_price: 70000000,
-              base_price: 104000000,
-              adjustment: 0,
-              unit_price: 104000000,
-              total_price: 104000000,
-              remark: ''
+              id: 'item-b3', stt: '3', item_type: 'service',
+              name_jp: '現場設置', name_vi: 'Lắp đặt tại công trình',
+              specs_text: '', unit: 'Lot/Lần', quantity: 1,
+              cost_price: 70000000, base_price: 104000000, adjustment: 0,
+              unit_price: 104000000, total_price: 104000000, remark: ''
             }
           ]
         }
       ];
     } else {
-      // Itemized 5 components in Section A + Management & Services in Section B
       sections = [
         {
           id: 'sec-a',
@@ -737,7 +920,7 @@ const App = (() => {
     const container = document.getElementById('view-flow2');
     if (!container) return;
     if (!state.activeQuote) {
-      container.innerHTML = `<div class="card"><p>Chưa có báo giá nào đang mở. Vui lòng chọn từ Báo giá cơ bản hoặc Danh sách báo giá.</p></div>`;
+      container.innerHTML = `<div class="card"><p>Chưa có báo giá nào đang mở. Vui lòng chọn từ Luồng 1 hoặc Danh sách báo giá.</p></div>`;
       return;
     }
 
@@ -759,7 +942,6 @@ const App = (() => {
     const serviceCatalog = state.equipment.filter(e => e.category === 'service');
 
     container.innerHTML = `
-      <!-- TOP ACTION BAR -->
       <div class="card" style="background: linear-gradient(90deg, #f8fafc 0%, #f0fdf4 100%); border-left: 5px solid var(--green);">
         <div class="row-between">
           <div>
@@ -778,9 +960,9 @@ const App = (() => {
 
           <div class="row">
             <label class="field" style="min-width: 230px;">
-              Chuyển nhanh giữa các Báo giá mẫu / Đã lưu:
+              Chuyển nhanh giữa các Báo giá đã lưu:
               <select onchange="App.loadQuotationById(this.value)">
-                <option value="">-- Chọn báo giá đã lưu (${state.quotations.length}) --</option>
+                <option value="">-- Chọn báo giá (${state.quotations.length}) --</option>
                 ${state.quotations.map(sq => `
                   <option value="${sq.id}" ${sq.id === q.id ? 'selected' : ''}>
                     [${esc(sq.quote_number)}] ${esc(sq.customer_name)} (${fmtVnd(sq.total_after_tax)} đ)
@@ -814,7 +996,6 @@ const App = (() => {
         </div>
       </div>
 
-      <!-- KHỞI TẠO NHANH THEO 3 MẪU BỐ CỤC CHUẨN KYOWA KAKO -->
       <div class="card">
         <div class="row-between">
           <div>
@@ -835,7 +1016,6 @@ const App = (() => {
         </div>
       </div>
 
-      <!-- PHẦN 1: THÔNG TIN CHUNG, KHÁCH HÀNG & ĐẠI DIỆN KYOWA KAKO -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">1. Thông Tin Hành Chính, Khách Hàng & Dự Án</h3>
@@ -866,9 +1046,8 @@ const App = (() => {
         </div>
 
         <div class="grid-2">
-          <!-- Cột Trái: Thông tin Khách hàng -->
           <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
-            <strong style="color:var(--red); display:block; margin-bottom:8px;">THÔNG TIN KHÁCH HÀNG</strong>
+            <strong style="color:var(--red); display:block; margin-bottom:8px;">THÔNG TIN KHÁCH HÀNG (Bên Trái Báo Giá)</strong>
             <div class="grid-2" style="gap:10px;">
               <label class="field" style="grid-column: 1 / -1;">
                 Tên công ty Khách hàng
@@ -897,9 +1076,8 @@ const App = (() => {
             </div>
           </div>
 
-          <!-- Cột Phải: Thông tin Kyowa Kako Việt Nam -->
           <div style="background:#f0f4fa; padding:12px; border-radius:8px; border:1px solid var(--border);">
-            <strong style="color:var(--navy); display:block; margin-bottom:8px;">KYOWA KAKO VIET NAM CO., LTD</strong>
+            <strong style="color:var(--navy); display:block; margin-bottom:8px;">KYOWA KAKO VIET NAM CO., LTD (Bên Phải Báo Giá)</strong>
             <div class="grid-2" style="gap:10px;">
               <label class="field" style="grid-column: 1 / -1;">
                 住所 Địa chỉ nhà máy KKVN
@@ -941,14 +1119,12 @@ const App = (() => {
         </div>
       </div>
 
-      <!-- PHẦN 2: QUY TẮC CHỐNG CỘNG TRÙNG & BỘ CHỌN NHANH THIẾT BỊ / OPTION / DỊCH VỤ -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">2. Quy Tắc Chi Phí Quản Lý/Thiết Kế & Bộ Công Cụ Thêm Nhanh Thiết Bị / Dịch Vụ</h3>
         </div>
 
         <div class="grid-3" style="margin-bottom: 14px;">
-          <!-- Quy tắc 1: Chi phí quản lý, thiết kế -->
           <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
             <strong style="color:var(--navy); display:block; margin-bottom:6px;">Quy tắc "Chi phí quản lý, thiết kế" (5%)</strong>
             <p style="font-size:12px; color:var(--muted); margin:0 0 8px;">
@@ -961,7 +1137,6 @@ const App = (() => {
             </select>
           </div>
 
-          <!-- Quy tắc 2: Thêm nhanh Thiết bị đo & Option -->
           <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
             <strong style="color:var(--navy); display:block; margin-bottom:6px;">Thêm Thiết bị đo & Option vào Báo giá</strong>
             <p style="font-size:12px; color:var(--muted); margin:0 0 8px;">
@@ -982,7 +1157,6 @@ const App = (() => {
             </div>
           </div>
 
-          <!-- Thêm nhanh Quạt / Bơm lẻ hoặc Dịch vụ -->
           <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
             <strong style="color:var(--navy); display:block; margin-bottom:6px;">Thêm nhanh Quạt / Bơm lẻ & Dịch vụ</strong>
             <div class="row" style="margin-bottom:6px;">
@@ -1009,7 +1183,6 @@ const App = (() => {
         </div>
       </div>
 
-      <!-- PHẦN 3: DANH SÁCH NHÓM HẠNG MỤC (SECTIONS) & BẢNG GIÁ THƯƠNG LƯỢNG -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">3. Chi Tiết Các Hạng Mục Báo Giá & Điều Chỉnh Thương Lượng</h3>
@@ -1091,7 +1264,6 @@ const App = (() => {
                                  placeholder="Dòng thông số phụ (VD: 850 CMM  1500 Pa  45 Kw, 3phase, 380V... hoặc 385 L/min x 10m x 2.2kW)"
                                  oninput="App.updateItemField(${sIdx}, ${iIdx}, 'specs_text', this.value)">
 
-                          <!-- Nếu hạng mục có danh sách dòng mô tả con (như Trọn bộ hệ tháp mẫu Taikisha) -->
                           <div style="margin-top:6px;">
                             <div class="row-between" style="margin-bottom:4px;">
                               <span style="font-size:11.5px;color:var(--muted);font-weight:600;">
@@ -1174,9 +1346,7 @@ const App = (() => {
         `).join('')}
       </div>
 
-      <!-- PHẦN 4: TỔNG HỢP GIÁ, THUẾ VAT & ĐIỀU KIỆN THƯƠNG MẠI (GHI CHÚ 1 -> 7) -->
       <div class="grid-2">
-        <!-- Bảng điều kiện thương mại -->
         <div class="card">
           <div class="card-header">
             <h3 class="card-title">4. Điều Kiện Thương Mại (記 Ghi chú ① → ⑦)</h3>
@@ -1229,7 +1399,6 @@ const App = (() => {
           </div>
         </div>
 
-        <!-- Bảng Tổng hợp giá, Chênh lệch & Thuế VAT -->
         <div class="card">
           <div class="card-header">
             <h3 class="card-title">5. Tổng Hợp Giá Báo, Chênh Lệch & Thuế VAT</h3>
@@ -1391,7 +1560,6 @@ const App = (() => {
     if (!q) return;
     q.mgmt_fee_mode = mode;
 
-    // Look up selected model's default management fee
     const refModel = state.models.find(
       m => m.product_line === q.selected_product_line && String(m.model_code) === String(q.selected_model_code)
     );
@@ -1401,7 +1569,6 @@ const App = (() => {
     if (mode === 'separate_to_b') {
       toast('Chế độ: Tách khoản Quản lý & Thiết kế xuống mục B. Khác (Không cộng trùng ở mục A).');
     } else if (mode === 'included_in_a') {
-      // Remove service_mgmt from Section B if present and add to Section A
       q.sections.forEach(sec => {
         if (sec.code.startsWith('B')) {
           sec.items = (sec.items || []).filter(it => it.item_type !== 'service_mgmt');
@@ -1447,7 +1614,6 @@ const App = (() => {
       q.sections = [{ id: 'sec-1', code: '', title: '', showSubtotal: false, items: [] }];
     }
 
-    // Determine target section: services go to last section (or Section B/IV), equipment goes to first section
     let targetSecIdx = 0;
     if (eq.category === 'service' && q.sections.length > 1) {
       targetSecIdx = q.sections.length - 1;
@@ -1568,7 +1734,6 @@ const App = (() => {
     }
 
     recalcActiveQuoteTotals();
-    // Update DOM cells in-place for smooth typing without losing focus
     const cellTotal = document.getElementById(`cell-total-${sIdx}-${iIdx}`);
     if (cellTotal) cellTotal.textContent = fmtVnd(it.total_price);
     const secSub = document.getElementById(`sec-subtotal-${sIdx}`);
@@ -1657,21 +1822,11 @@ const App = (() => {
             subtotalLabel: '',
             items: [
               {
-                id: 'item-1',
-                stt: '1',
-                item_type: 'fan',
-                name_jp: '排気ファン',
-                name_vi: 'Quạt hút   #7 RFT-RB          (FRP)',
+                id: 'item-1', stt: '1', item_type: 'fan',
+                name_jp: '排気ファン', name_vi: 'Quạt hút   #7 RFT-RB          (FRP)',
                 specs_text: '850 CMM   1500 Pa   45 Kw, 3phase ,380V,50Hz, 4P,IE3',
-                unit: 'Pc/Cái',
-                quantity: 1,
-                cost_price: 389100000,
-                base_price: 778200000,
-                adjustment: 0,
-                unit_price: 778200000,
-                total_price: 778200000,
-                remark: 'KYOWA JP',
-                sub_lines: []
+                unit: 'Pc/Cái', quantity: 1, cost_price: 389100000, base_price: 778200000,
+                adjustment: 0, unit_price: 778200000, total_price: 778200000, remark: 'KYOWA JP', sub_lines: []
               }
             ]
           }
@@ -1856,9 +2011,9 @@ const App = (() => {
     if (!qNum) return '';
     const m = qNum.match(/^(\d{4})-(\d{3})-(\d{2})$/);
     if (m) {
-      return `${m[1]} -  ${m[2]}  - <span class="rev-part">${m[3].split('').join(' ')}</span>`;
+      return `<span class="q-red">${m[1]} - &nbsp;</span><span class="q-black">${m[2]}</span><span class="q-red">&nbsp; - ${m[3].split('').join(' ')}</span>`;
     }
-    return esc(qNum);
+    return `<span class="q-red">${esc(qNum)}</span>`;
   }
 
   function renderPrintView() {
@@ -1873,7 +2028,6 @@ const App = (() => {
     const q = state.activeQuote;
     const t = q.terms || {};
 
-    // Build table rows matching the exact grid look of the 3 PDFs
     let tableRowsHtml = '';
     (q.sections || []).forEach(sec => {
       if (sec.title && sec.title.trim()) {
@@ -1884,7 +2038,6 @@ const App = (() => {
         `;
       }
       (sec.items || []).forEach(it => {
-        // Main item row
         tableRowsHtml += `
           <tr>
             <td style="text-align:center;font-weight:600;">${esc(it.stt)}</td>
@@ -1897,7 +2050,6 @@ const App = (() => {
           </tr>
         `;
 
-        // If item has a secondary spec line (like SMC Fan or Mektec Pump)
         if (it.specs_text && it.specs_text.trim()) {
           tableRowsHtml += `
             <tr>
@@ -1915,7 +2067,6 @@ const App = (() => {
           `;
         }
 
-        // If item has sub_lines (like Taikisha bundled tower set)
         if (it.sub_lines && it.sub_lines.length > 0) {
           it.sub_lines.forEach(sl => {
             tableRowsHtml += `
@@ -1949,7 +2100,6 @@ const App = (() => {
       }
     });
 
-    // If no section subtotals were shown (like SMC or Mektec), show the main TOTAL row inside the table
     const anySecSubtotal = (q.sections || []).some(s => s.showSubtotal);
     if (!anySecSubtotal) {
       tableRowsHtml += `
@@ -1968,7 +2118,6 @@ const App = (() => {
         : null;
 
     container.innerHTML = `
-      <!-- CONTROL BAR (HIDDEN WHEN PRINTING) -->
       <div class="card no-print">
         <div class="row-between">
           <div>
@@ -1995,10 +2144,8 @@ const App = (() => {
         </div>
       </div>
 
-      <!-- AUTHENTIC A4 QUOTATION SHEET -->
       <div class="a4-preview-wrapper">
         <div class="kkvn-sheet">
-          <!-- Header: Logo + Title + Date -->
           <div class="kkvn-top-bar">
             <div class="kkvn-logo-block">
               <img src="/assets/kkvn_logo.jpg" alt="KKVN" class="kkvn-logo-img">
@@ -2008,7 +2155,6 @@ const App = (() => {
             <div class="kkvn-date">${esc(formatDateDMY(q.quote_date))}</div>
           </div>
 
-          <!-- Two-column Customer & KKVN box -->
           <table class="kkvn-party-table">
             <tr>
               <td class="kkvn-party-left">
@@ -2044,7 +2190,6 @@ const App = (() => {
             </tr>
           </table>
 
-          <!-- Project / Install Location / Lead time -->
           <div class="kkvn-meta-lines">
             <div class="kkvn-meta-row">
               <span style="min-width:130px">プロジェクトDự Án :</span>
@@ -2060,7 +2205,6 @@ const App = (() => {
             </div>
           </div>
 
-          <!-- Items Table -->
           <table class="kkvn-items-table">
             <thead>
               <tr>
@@ -2078,7 +2222,6 @@ const App = (() => {
             </tbody>
           </table>
 
-          <!-- Summary Tax Rows below table -->
           <table class="kkvn-summary-block">
             ${anySecSubtotal ? `
               <tr>
@@ -2102,7 +2245,6 @@ const App = (() => {
             </tr>
           </table>
 
-          <!-- Footer Notes (① -> ⑦) & Company Stamp/Signature -->
           <div class="kkvn-footer-grid">
             <div class="kkvn-notes-col">
               <div class="kkvn-notes-title">記 Ghi chú</div>
@@ -2172,7 +2314,6 @@ const App = (() => {
               </div>
             </div>
 
-            <!-- Right Signature & Stamp Column -->
             <div class="kkvn-sign-col">
               <div style="font-weight:600;margin-bottom:4px;">営業部 Phòng Kinh Doanh</div>
               <div class="kkvn-stamp-wrap">
@@ -2198,6 +2339,7 @@ const App = (() => {
 
     const showCost = state.permissions.canViewCost;
     const canApprove = state.permissions.canApproveQuote;
+    const canDelete = state.permissions.canDeleteQuote;
     const statusLabels = {
       draft: 'Bản nháp',
       pending_approval: 'Chờ duyệt',
@@ -2226,7 +2368,7 @@ const App = (() => {
           <div>
             <h2 class="card-title">Quản Lý Hồ Sơ Báo Giá, Lịch Sử Phiên Bản (Revision) & Phê Duyệt</h2>
             <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted)">
-              Lưu trữ toàn bộ các báo giá đã lập cùng snapshot Giá Cost & Giá Cơ Bản tại thời điểm báo giá.
+              ${state.permissions.canViewAllQuotes ? 'Hiển thị toàn bộ báo giá trong hệ thống.' : 'Chế độ giới hạn: Chỉ hiển thị các báo giá do bạn tạo hoặc đứng tên phụ trách.'}
             </p>
           </div>
           <div class="row">
@@ -2292,7 +2434,9 @@ const App = (() => {
                       ${canApprove && q.status !== 'approved' ? `
                         <button class="btn btn-sm btn-primary" onclick="App.changeQuoteStatus(${q.id}, 'approved')">✅ Duyệt</button>
                       ` : ''}
-                      <button class="btn btn-sm btn-danger" onclick="App.deleteQuote(${q.id})">🗑</button>
+                      ${canDelete ? `
+                        <button class="btn btn-sm btn-danger" onclick="App.deleteQuote(${q.id})">🗑</button>
+                      ` : ''}
                     </div>
                   </td>
                 </tr>
@@ -2335,6 +2479,8 @@ const App = (() => {
     if (!container) return;
 
     const showCost = state.permissions.canViewCost;
+    const canManageCat = state.permissions.canManageCatalog;
+    const canExport = state.permissions.canExportExcel || canManageCat;
     const productLines = [...new Set(state.models.map(m => m.product_line))];
     const filteredModels = state.models.filter(m =>
       state.catFilterProd === 'ALL' || m.product_line === state.catFilterProd
@@ -2344,7 +2490,6 @@ const App = (() => {
     );
 
     container.innerHTML = `
-      <!-- EXCEL SYNC CARD -->
       <div class="card">
         <div class="row-between">
           <div>
@@ -2354,10 +2499,12 @@ const App = (() => {
             </p>
           </div>
           <div class="row">
-            <a class="btn btn-navy" href="/api/catalog/export-excel" download="Data_bao_gia_Kyowa_Kako.xlsx" style="text-decoration:none">
-              📥 Xuất Danh Mục Ra Excel (.xlsx 3 Sheet)
-            </a>
-            ${showCost ? `
+            ${canExport ? `
+              <a class="btn btn-navy" href="/api/catalog/export-excel?token=${encodeURIComponent(state.authToken)}" download="Data_bao_gia_Kyowa_Kako.xlsx" style="text-decoration:none">
+                📥 Xuất Danh Mục Ra Excel (.xlsx 3 Sheet)
+              </a>
+            ` : ''}
+            ${canManageCat ? `
               <label class="btn btn-primary" style="cursor:pointer;margin:0;">
                 📤 Nhập / Cập Nhật Từ File Excel (.xlsx)
                 <input type="file" accept=".xlsx" style="display:none" onchange="App.uploadExcelCatalog(this)">
@@ -2366,13 +2513,12 @@ const App = (() => {
                 🔄 Đồng bộ lại từ file Data báo giá.xlsx gốc
               </button>
             ` : `
-              <span class="status-pill status-pending_approval">Chế độ Sale: Chỉ xem Giá Cơ Bản (Chuyển sang Quản lý để sửa & xem Cost)</span>
+              <span class="status-pill status-pending_approval">Tài khoản của bạn ở chế độ Chỉ xem Danh mục</span>
             `}
           </div>
         </div>
       </div>
 
-      <!-- DANH MỤC 64 MODEL HỆ THÁP -->
       <div class="card">
         <div class="card-header">
           <div class="row" style="align-items:center;">
@@ -2382,7 +2528,7 @@ const App = (() => {
               ${productLines.map(p => `<option value="${esc(p)}" ${state.catFilterProd === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}
             </select>
           </div>
-          ${showCost ? `
+          ${canManageCat ? `
             <button class="btn btn-sm btn-primary" onclick="App.showAddModelModal()">
               + Thêm Model Tháp Mới
             </button>
@@ -2455,7 +2601,6 @@ const App = (() => {
         </div>
       </div>
 
-      <!-- DANH MỤC THIẾT BỊ ĐO, OPTION, QUẠT LẺ, BƠM LẺ & DỊCH VỤ -->
       <div class="card">
         <div class="card-header">
           <div class="row" style="align-items:center;">
@@ -2469,7 +2614,7 @@ const App = (() => {
               <option value="service" ${state.equipFilterCat === 'service' ? 'selected' : ''}>Dịch vụ (Thiết kế, Vận chuyển, Lắp đặt...)</option>
             </select>
           </div>
-          ${showCost ? `
+          ${canManageCat ? `
             <button class="btn btn-sm btn-primary" onclick="document.getElementById('addEquipFormWrap').classList.toggle('hidden')">
               + Thêm Thiết Bị / Dịch Vụ Mới
             </button>
@@ -2514,7 +2659,7 @@ const App = (() => {
                 <th class="r">Đơn giá cơ bản (VND)</th>
                 <th>Quy tắc gói cơ bản</th>
                 <th>Ghi chú</th>
-                ${showCost ? '<th class="c">Xóa</th>' : ''}
+                ${canManageCat ? '<th class="c">Xóa</th>' : ''}
               </tr>
             </thead>
             <tbody>
@@ -2534,7 +2679,7 @@ const App = (() => {
                     }
                   </td>
                   <td>${esc(eq.origin_note || '')}</td>
-                  ${showCost ? `
+                  ${canManageCat ? `
                     <td class="c">
                       <button class="btn btn-sm btn-danger" onclick="App.deleteEquip(${eq.id})">🗑</button>
                     </td>
@@ -2673,10 +2818,540 @@ const App = (() => {
     reader.readAsDataURL(file);
   }
 
+  // ===========================================================================
+  // TAB 6: QUẢN LÝ TÀI KHOẢN & PHÂN QUYỀN CHI TIẾT (RBAC & AUDIT LOGS)
+  // ===========================================================================
+  async function loadAndRenderUsersTab() {
+    try {
+      const data = await api('/api/users');
+      state.usersAdminList = data.users || [];
+      state.auditLogs = data.audit_logs || [];
+      state.rolePresets = data.role_presets || {};
+      document.getElementById('usersCountBadge').textContent = state.usersAdminList.length;
+      renderUsersTab();
+    } catch (err) {
+      toast('Lỗi tải danh sách tài khoản: ' + err.message);
+    }
+  }
+
+  function renderUsersTab() {
+    const container = document.getElementById('view-users');
+    if (!container) return;
+
+    const canManageUsers = state.permissions.canManageUsers;
+    const users = state.usersAdminList;
+    const adminCount = users.filter(u => u.role === 'admin' || u.role === 'manager').length;
+    const saleCount = users.filter(u => u.role === 'sale' || u.role === 'sale_own').length;
+    const lockedCount = users.filter(u => !u.is_active).length;
+
+    const permShortLabels = {
+      canViewCost: 'Xem Giá Cost',
+      canApproveQuote: 'Duyệt BG',
+      canManageCatalog: 'QL Danh mục & Excel',
+      canManageUsers: 'QL Tài khoản',
+      canViewAllQuotes: 'Xem tất cả BG',
+      canDeleteQuote: 'Xóa BG',
+      canExportExcel: 'Xuất Excel'
+    };
+
+    container.innerHTML = `
+      <!-- KPI OVERVIEW -->
+      <div class="kpi-grid">
+        <div class="kpi-box">
+          <div class="kpi-label">Tổng số tài khoản hệ thống</div>
+          <div class="kpi-val">${users.length} tài khoản</div>
+        </div>
+        <div class="kpi-box amber">
+          <div class="kpi-label">Ban Giám Đốc / Quản Lý (Xem Cost & Duyệt)</div>
+          <div class="kpi-val">${adminCount} tài khoản</div>
+        </div>
+        <div class="kpi-box green">
+          <div class="kpi-label">Nhân viên Kinh Doanh (Sale)</div>
+          <div class="kpi-val">${saleCount} tài khoản</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-label">Tài khoản đang bạn đăng nhập</div>
+          <div class="kpi-val">${esc(state.currentUser?.full_name || '')}</div>
+        </div>
+      </div>
+
+      <!-- DANH SÁCH TÀI KHOẢN & PHÂN QUYỀN -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Quản Lý Tài Khoản Người Dùng & Phân Quyền Chi Tiết (Granular RBAC)</h2>
+            <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted)">
+              Phân quyền chi tiết theo vai trò (Admin / Quản lý / Sale) hoặc tùy chỉnh từng quyền riêng biệt cho mỗi cá nhân.
+            </p>
+          </div>
+          <div class="row">
+            <button class="btn" onclick="App.openChangePasswordModal()">
+              🔑 Đổi mật khẩu của tôi
+            </button>
+            ${canManageUsers ? `
+              <button class="btn btn-primary" onclick="App.openUserPermModal(null)">
+                + Tạo Tài Khoản Mới & Phân Quyền
+              </button>
+            ` : `
+              <span class="status-pill status-pending_approval">Bạn đang ở chế độ Xem phân quyền (Chỉ Admin/Quản lý mới sửa được quyền)</span>
+            `}
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Tài khoản (Username)</th>
+                <th>Họ và Tên / Liên hệ</th>
+                <th>Chức danh trên Báo giá</th>
+                <th>Vai trò chính</th>
+                <th>Các quyền được cấp (Chi tiết)</th>
+                <th class="c">Số BG</th>
+                <th class="c">Trạng thái</th>
+                <th>Đăng nhập cuối</th>
+                <th class="c">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${users.map(u => {
+                const p = u.permissions || {};
+                const rClass = u.role === 'admin' ? 'admin' : u.role === 'manager' ? 'manager' : 'sale';
+                const isSelf = u.id === state.currentUser?.id;
+                return `
+                  <tr style="${!u.is_active ? 'opacity:0.65;background:#f8fafc;' : ''}">
+                    <td>
+                      <strong style="color:var(--navy)">${esc(u.username)}</strong>
+                      ${isSelf ? '<span class="tag-included" style="margin-left:4px">Bạn</span>' : ''}
+                    </td>
+                    <td>
+                      <strong>${esc(u.full_name)}</strong>
+                      <div style="font-size:12px;color:var(--muted)">📞 ${esc(u.phone || '—')} · ✉️ ${esc(u.email || '—')}</div>
+                    </td>
+                    <td>
+                      <div>${esc(u.title_vi || '—')}</div>
+                      <div style="font-size:11.5px;color:var(--muted)">${esc(u.title_jp || '')}</div>
+                    </td>
+                    <td>
+                      <span class="role-badge ${rClass}">${esc(ROLE_LABELS[u.role] || u.role)}</span>
+                    </td>
+                    <td style="max-width: 340px;">
+                      ${Object.keys(permShortLabels).map(k => `
+                        <span class="perm-tag ${p[k] ? 'on' : 'off'}">
+                          ${p[k] ? '✓' : '✕'} ${permShortLabels[k]}
+                        </span>
+                      `).join('')}
+                    </td>
+                    <td class="c"><strong>${u.quotes_count || 0}</strong></td>
+                    <td class="c">
+                      ${u.is_active
+                        ? '<span class="status-pill status-approved">Hoạt động</span>'
+                        : '<span class="status-pill status-rejected">Đã khóa</span>'}
+                    </td>
+                    <td style="font-size:12px;color:var(--muted)">
+                      ${esc(u.last_login || 'Chưa ĐN')}
+                    </td>
+                    <td class="c">
+                      <div class="row" style="justify-content:center;gap:4px;flex-wrap:nowrap;">
+                        ${canManageUsers ? `
+                          <button class="btn btn-sm btn-navy" onclick="App.openUserPermModal(${u.id})">
+                            ✏️ Sửa & Phân quyền
+                          </button>
+                          ${!isSelf ? `
+                            <button class="btn btn-sm" onclick="App.toggleUserActive(${u.id}, ${u.is_active ? 0 : 1})"
+                                    title="${u.is_active ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}">
+                              ${u.is_active ? '🔒 Khóa' : '🔓 Mở'}
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="App.deleteUserAccount(${u.id})">
+                              🗑
+                            </button>
+                          ` : ''}
+                        ` : ''}
+                        ${!isSelf && u.is_active ? `
+                          <button class="btn btn-sm" onclick="App.quickLogin('${esc(u.username)}', '123456')" title="Đăng nhập nhanh sang tài khoản này (MK mặc định: 123456)">
+                            ⚡ Chuyển TK
+                          </button>
+                        ` : ''}
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- MA TRẬN PHÂN QUYỀN & NHẬT KÝ HOẠT ĐỘNG -->
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Ma Trận Phân Quyền Mặc Định Theo Vai Trò</h3>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Quyền hạn chức năng</th>
+                  <th class="c">Admin / GĐ</th>
+                  <th class="c">Quản lý KD</th>
+                  <th class="c">NV Sale</th>
+                  <th class="c">Sale (Cá nhân)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Tra cứu cấu hình & Lập báo giá</td>
+                  <td class="c">✅</td><td class="c">✅</td><td class="c">✅</td><td class="c">✅</td>
+                </tr>
+                <tr>
+                  <td><strong>Xem Giá Cost nội bộ & Lợi nhuận</strong></td>
+                  <td class="c">✅</td><td class="c">✅</td><td class="c">❌</td><td class="c">❌</td>
+                </tr>
+                <tr>
+                  <td><strong>Phê duyệt báo giá (Duyệt giá báo)</strong></td>
+                  <td class="c">✅</td><td class="c">✅</td><td class="c">❌</td><td class="c">❌</td>
+                </tr>
+                <tr>
+                  <td><strong>Quản lý Danh mục & Import Excel</strong></td>
+                  <td class="c">✅</td><td class="c">✅</td><td class="c">❌</td><td class="c">❌</td>
+                </tr>
+                <tr>
+                  <td>Xem Báo giá của tất cả nhân viên</td>
+                  <td class="c">✅</td><td class="c">✅</td><td class="c">✅</td><td class="c">❌ (Chỉ cá nhân)</td>
+                </tr>
+                <tr>
+                  <td>Xóa Hồ sơ Báo giá</td>
+                  <td class="c">✅</td><td class="c">✅</td><td class="c">❌</td><td class="c">❌</td>
+                </tr>
+                <tr>
+                  <td><strong>Quản lý Tài khoản & Phân quyền</strong></td>
+                  <td class="c">✅</td><td class="c">Tùy cấp</td><td class="c">❌</td><td class="c">❌</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Nhật Ký Hoạt Động & Bảo Mật Gần Đây (Audit Logs)</h3>
+            <span style="font-size:12px;color:var(--muted)">40 hoạt động gần nhất</span>
+          </div>
+          <div class="table-wrap" style="max-height: 290px; overflow-y: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Thời gian</th>
+                  <th>Tài khoản</th>
+                  <th>Hành động</th>
+                  <th>Chi tiết</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${state.auditLogs.map(log => `
+                  <tr>
+                    <td style="font-size:11.5px;white-space:nowrap;color:var(--muted)">${esc(log.created_at)}</td>
+                    <td><strong>${esc(log.username)}</strong></td>
+                    <td><span class="tag-included">${esc(log.action)}</span></td>
+                    <td style="font-size:12.5px;">${esc(log.details)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function openUserPermModal(userId) {
+    const existing = userId ? state.usersAdminList.find(u => u.id === userId) : null;
+    state.editingUser = existing ? JSON.parse(JSON.stringify(existing)) : {
+      id: null,
+      username: '',
+      password: '123456',
+      full_name: '',
+      email: '',
+      phone: '',
+      role: 'sale',
+      title_vi: 'Nhân viên Kinh doanh',
+      title_jp: '担当者',
+      is_active: 1,
+      permissions: { ...(state.rolePresets?.sale || {
+        canViewCost: false,
+        canApproveQuote: false,
+        canManageCatalog: false,
+        canManageUsers: false,
+        canViewAllQuotes: true,
+        canDeleteQuote: false,
+        canExportExcel: false
+      }) }
+    };
+
+    renderUserPermModalContent();
+    document.getElementById('userPermModal')?.classList.remove('hidden');
+  }
+
+  function closeUserPermModal() {
+    document.getElementById('userPermModal')?.classList.add('hidden');
+  }
+
+  function renderUserPermModalContent() {
+    const u = state.editingUser;
+    if (!u) return;
+    const body = document.getElementById('userPermModalBody');
+    if (!body) return;
+
+    const isEdit = Boolean(u.id);
+    const p = u.permissions || {};
+
+    body.innerHTML = `
+      <div class="card-header">
+        <h3 class="card-title">
+          ${isEdit ? `✏️ Chỉnh Sửa Tài Khoản & Phân Quyền: ${esc(u.full_name)} (${esc(u.username)})` : '➕ Tạo Tài Khoản Người Dùng Mới & Phân Quyền'}
+        </h3>
+        <button class="btn btn-sm" onclick="App.closeUserPermModal()">✕</button>
+      </div>
+
+      <form onsubmit="App.submitUserPermForm(event)">
+        <div class="grid-2" style="gap: 12px; margin-bottom: 14px;">
+          <label class="field">
+            Tên đăng nhập (Username) *
+            <input type="text" id="uf_username" value="${esc(u.username)}" ${isEdit ? 'disabled style="background:#f1f5f9"' : 'required'} placeholder="VD: sale_nam">
+          </label>
+          <label class="field">
+            ${isEdit ? 'Đặt lại mật khẩu mới (Để trống nếu giữ nguyên)' : 'Mật khẩu khởi tạo *'}
+            <input type="text" id="uf_password" value="${isEdit ? '' : esc(u.password || '123456')}" ${isEdit ? '' : 'required'} placeholder="${isEdit ? 'Nhập mật khẩu mới nếu muốn đổi...' : 'Mặc định: 123456'}">
+          </label>
+          <label class="field">
+            Họ và Tên nhân sự *
+            <input type="text" id="uf_fullname" value="${esc(u.full_name)}" required placeholder="VD: Mr Nguyễn Văn Nam">
+          </label>
+          <label class="field">
+            Số điện thoại (In trên báo giá)
+            <input type="text" id="uf_phone" value="${esc(u.phone || '')}" placeholder="VD: 0908-xxx-xxx">
+          </label>
+          <label class="field">
+            Email
+            <input type="email" id="uf_email" value="${esc(u.email || '')}" placeholder="nam@kyowakako.vn">
+          </label>
+          <label class="field">
+            Trạng thái tài khoản
+            <select id="uf_active">
+              <option value="1" ${u.is_active ? 'selected' : ''}>✅ Đang hoạt động (Cho phép đăng nhập)</option>
+              <option value="0" ${!u.is_active ? 'selected' : ''}>🔒 Khóa tài khoản (Chặn đăng nhập)</option>
+            </select>
+          </label>
+          <label class="field">
+            Chức danh Tiếng Việt
+            <input type="text" id="uf_title_vi" value="${esc(u.title_vi || '')}" placeholder="VD: Nhân viên Kinh doanh / Người duyệt">
+          </label>
+          <label class="field">
+            Chức danh Tiếng Nhật (承認者 / 担当者)
+            <input type="text" id="uf_title_jp" value="${esc(u.title_jp || '')}" placeholder="VD: 担当者 hoặc 承認者">
+          </label>
+        </div>
+
+        <div style="background: var(--navy-light); padding: 12px; border-radius: 8px; margin-bottom: 14px;">
+          <label class="field">
+            Chọn Vai Trò Mẫu (Tự động áp dụng bộ quyền chuẩn bên dưới):
+            <select id="uf_role" onchange="App.onRolePresetSelect(this.value)" style="font-weight:700;">
+              <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin / Ban Giám Đốc (Toàn quyền hệ thống)</option>
+              <option value="manager" ${u.role === 'manager' ? 'selected' : ''}>Quản lý Kinh doanh (Xem Giá Cost, Duyệt BG, Quản lý danh mục)</option>
+              <option value="sale" ${u.role === 'sale' ? 'selected' : ''}>Nhân viên Kinh doanh - Sale (Ẩn Giá Cost, Lập & Xuất BG)</option>
+              <option value="sale_own" ${u.role === 'sale_own' ? 'selected' : ''}>Nhân viên Sale giới hạn (Ẩn Giá Cost, Chỉ xem BG cá nhân)</option>
+            </select>
+          </label>
+        </div>
+
+        <strong style="color:var(--navy); display:block; margin-bottom:8px;">
+          Cấu Hình Từng Quyền Hạn Chi Tiết (Có thể bật/tắt tùy chỉnh riêng cho tài khoản này):
+        </strong>
+        <div class="grid-2" style="gap: 8px; margin-bottom: 18px;">
+          ${PERM_DEFINITIONS.map(pd => `
+            <label class="perm-check-card">
+              <input type="checkbox" id="perm_${pd.key}" ${p[pd.key] ? 'checked' : ''}
+                     onchange="App.onToggleUserPermCheck('${pd.key}', this.checked)">
+              <div>
+                <div style="font-weight:700; color:var(--navy-dark); font-size:13px;">${esc(pd.label)}</div>
+                <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(pd.desc)}</div>
+              </div>
+            </label>
+          `).join('')}
+        </div>
+
+        <div class="row" style="justify-content: flex-end;">
+          <button type="button" class="btn" onclick="App.closeUserPermModal()">Hủy</button>
+          <button type="submit" class="btn btn-primary">
+            💾 ${isEdit ? 'Lưu Cập Nhật & Phân Quyền' : 'Tạo Tài Khoản Mới'}
+          </button>
+        </div>
+      </form>
+    `;
+  }
+
+  function onRolePresetSelect(role) {
+    if (!state.editingUser) return;
+    // Sync form inputs before re-rendering checkboxes
+    syncUserModalInputsToState();
+    state.editingUser.role = role;
+    const preset = state.rolePresets?.[role];
+    if (preset) {
+      state.editingUser.permissions = { ...preset };
+    }
+    if (role === 'admin') {
+      state.editingUser.title_vi = 'Ban Giám Đốc / Người duyệt';
+      state.editingUser.title_jp = '承認者 (Admin)';
+    } else if (role === 'manager') {
+      state.editingUser.title_vi = 'Quản lý Kinh doanh / Người duyệt';
+      state.editingUser.title_jp = '営業部・承認者';
+    } else {
+      state.editingUser.title_vi = 'Nhân viên Kinh doanh';
+      state.editingUser.title_jp = '担当者';
+    }
+    renderUserPermModalContent();
+  }
+
+  function onToggleUserPermCheck(key, checked) {
+    if (!state.editingUser) return;
+    state.editingUser.permissions = state.editingUser.permissions || {};
+    state.editingUser.permissions[key] = Boolean(checked);
+  }
+
+  function syncUserModalInputsToState() {
+    const u = state.editingUser;
+    if (!u) return;
+    const un = document.getElementById('uf_username');
+    if (un && !u.id) u.username = un.value.trim();
+    const pw = document.getElementById('uf_password');
+    if (pw) u.password = pw.value;
+    const fn = document.getElementById('uf_fullname');
+    if (fn) u.full_name = fn.value.trim();
+    const ph = document.getElementById('uf_phone');
+    if (ph) u.phone = ph.value.trim();
+    const em = document.getElementById('uf_email');
+    if (em) u.email = em.value.trim();
+    const ac = document.getElementById('uf_active');
+    if (ac) u.is_active = Number(ac.value);
+    const tv = document.getElementById('uf_title_vi');
+    if (tv) u.title_vi = tv.value.trim();
+    const tj = document.getElementById('uf_title_jp');
+    if (tj) u.title_jp = tj.value.trim();
+    const rl = document.getElementById('uf_role');
+    if (rl) u.role = rl.value;
+  }
+
+  async function submitUserPermForm(e) {
+    e.preventDefault();
+    syncUserModalInputsToState();
+    const u = state.editingUser;
+    if (!u) return;
+
+    try {
+      if (u.id) {
+        await api(`/api/users/${u.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            full_name: u.full_name,
+            email: u.email,
+            phone: u.phone,
+            role: u.role,
+            title_vi: u.title_vi,
+            title_jp: u.title_jp,
+            is_active: u.is_active,
+            permissions: u.permissions,
+            newPassword: u.password || ''
+          })
+        });
+        toast(`Đã cập nhật tài khoản & phân quyền cho ${u.full_name}!`);
+      } else {
+        await api('/api/users', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: u.username,
+            password: u.password || '123456',
+            full_name: u.full_name,
+            email: u.email,
+            phone: u.phone,
+            role: u.role,
+            title_vi: u.title_vi,
+            title_jp: u.title_jp,
+            is_active: u.is_active,
+            permissions: u.permissions
+          })
+        });
+        toast(`Đã tạo tài khoản ${u.username} thành công!`);
+      }
+      closeUserPermModal();
+      await loadBootstrap();
+      await loadAndRenderUsersTab();
+      renderAll();
+    } catch (err) {
+      toast('Lỗi: ' + err.message);
+    }
+  }
+
+  async function toggleUserActive(id, nextActive) {
+    const target = state.usersAdminList.find(u => u.id === id);
+    if (!target) return;
+    try {
+      await api(`/api/users/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          ...target,
+          is_active: nextActive
+        })
+      });
+      await loadAndRenderUsersTab();
+      toast(nextActive ? `Đã mở khóa tài khoản ${target.username}` : `Đã khóa tài khoản ${target.username}`);
+    } catch (err) {
+      toast('Lỗi: ' + err.message);
+    }
+  }
+
+  async function deleteUserAccount(id) {
+    const target = state.usersAdminList.find(u => u.id === id);
+    if (!target) return;
+    if (!confirm(`Bạn có chắc chắn muốn xóa tài khoản "${target.full_name}" (${target.username})?`)) return;
+    try {
+      await api(`/api/users/${id}`, { method: 'DELETE' });
+      await loadBootstrap();
+      await loadAndRenderUsersTab();
+      toast(`Đã xóa tài khoản ${target.username}.`);
+    } catch (err) {
+      toast('Lỗi xóa tài khoản: ' + err.message);
+    }
+  }
+
+  function toggleUserDropdown(e) {
+    if (e) e.stopPropagation();
+    document.getElementById('userDropdownMenu')?.classList.toggle('hidden');
+  }
+
+  function closeUserDropdown() {
+    document.getElementById('userDropdownMenu')?.classList.add('hidden');
+  }
+
+  document.addEventListener('click', (e) => {
+    const wrap = document.getElementById('userMenuWrap');
+    if (wrap && !wrap.contains(e.target)) {
+      closeUserDropdown();
+    }
+  });
+
   document.addEventListener('DOMContentLoaded', init);
 
   return {
-    switchUser,
+    submitLogin,
+    quickLogin,
+    toggleLoginPassVisibility,
+    logout,
+    toggleUserDropdown,
+    closeUserDropdown,
+    openChangePasswordModal,
+    closeChangePasswordModal,
+    submitChangePassword,
     showTab,
     setF1Product,
     setF1Model,
@@ -2717,6 +3392,13 @@ const App = (() => {
     deleteEquip,
     resyncDefaultExcel,
     uploadExcelCatalog,
-    renderFlow2
+    renderFlow2,
+    openUserPermModal,
+    closeUserPermModal,
+    onRolePresetSelect,
+    onToggleUserPermCheck,
+    submitUserPermForm,
+    toggleUserActive,
+    deleteUserAccount
   };
 })();

@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hệ Thống Lập Báo Giá – Kyowa Kako Việt Nam (KKVN)</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
+
 <body>
 
   <!-- =========================================================================
@@ -13,7 +15,6 @@
        ========================================================================= -->
   <div id="loginOverlay" class="login-overlay hidden">
     <div class="login-card">
-      <!-- Left: Login Form -->
       <div class="login-left">
         <div class="login-brand">
           <img src="/assets/kkvn_logo.jpg" alt="KKVN Logo">
@@ -28,19 +29,23 @@
           Nhập tài khoản được cấp để truy cập theo phân quyền (Admin / Quản lý / Sale).
         </p>
 
-        <div id="loginErrorBox" class="alert-box alert-warn hidden" style="color: var(--red); border-color: #fca5a5; background: #fff5f5;"></div>
+        <div id="loginErrorBox" class="alert-box alert-warn hidden"
+          style="color: var(--red); border-color: #fca5a5; background: #fff5f5;"></div>
 
         <form onsubmit="App.submitLogin(event)">
           <label class="field" style="margin-bottom: 14px;">
             Tên đăng nhập (Username)
-            <input type="text" id="loginUsername" placeholder="VD: baotruong, yamanaka, camtu..." required autocomplete="username" style="padding: 10px 12px; font-size: 14px;">
+            <input type="text" id="loginUsername" placeholder="VD: baotruong, yamanaka, camtu..." required
+              autocomplete="username" style="padding: 10px 12px; font-size: 14px;">
           </label>
 
           <label class="field" style="margin-bottom: 18px;">
             Mật khẩu
             <div style="display:flex; gap:6px;">
-              <input type="password" id="loginPassword" placeholder="Nhập mật khẩu..." required autocomplete="current-password" style="flex:1; padding: 10px 12px; font-size: 14px;">
-              <button type="button" class="btn btn-sm" onclick="App.toggleLoginPassVisibility()" title="Hiện/Ẩn mật khẩu">👁️</button>
+              <input type="password" id="loginPassword" placeholder="Nhập mật khẩu..." required
+                autocomplete="current-password" style="flex:1; padding: 10px 12px; font-size: 14px;">
+              <button type="button" class="btn btn-sm" onclick="App.toggleLoginPassVisibility()"
+                title="Hiện/Ẩn mật khẩu">👁️</button>
             </div>
           </label>
 
@@ -50,23 +55,26 @@
         </form>
       </div>
 
-      <!-- Right: Quick Demo Accounts & Role Permissions Info -->
       <div class="login-right">
         <div>
           <div style="font-weight: 700; color: var(--navy); font-size: 14px; margin-bottom: 6px;">
             ⚡ Đăng nhập nhanh (Kiểm thử Phân quyền)
           </div>
           <p style="font-size: 12px; color: var(--muted); margin: 0 0 12px;">
-            Mật khẩu mặc định của các tài khoản mẫu là <code>123456</code>. Nhấn vào nút bên dưới để đăng nhập ngay với vai trò tương ứng:
+            Mật khẩu mặc định của các tài khoản mẫu là <code>123456</code>. Nhấn vào nút bên dưới để đăng nhập ngay với
+            vai trò tương ứng:
           </p>
           <div id="demoAccountsContainer"></div>
         </div>
 
-        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #1e3a8a; margin-top: 12px;">
+        <div
+          style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #1e3a8a; margin-top: 12px;">
           <strong>Cơ chế bảo mật & phân quyền (RBAC):</strong>
           <ul style="margin: 4px 0 0 16px; padding: 0;">
-            <li><strong>Admin / Quản lý:</strong> Xem được Giá Cost nội bộ, Duyệt báo giá, Quản lý danh mục & Phân quyền tài khoản.</li>
-            <li><strong>Nhân viên Sale:</strong> Chỉ xem Giá Cơ Bản (ẩn hoàn toàn Giá Cost), lập & xuất báo giá PDF.</li>
+            <li><strong>Admin / Quản lý:</strong> Xem được Giá Cost nội bộ, Duyệt báo giá, Quản lý danh mục & Phân quyền
+              tài khoản.</li>
+            <li><strong>Nhân viên Sale:</strong> Chỉ xem Giá Cơ Bản (ẩn hoàn toàn Giá Cost), lập & xuất báo giá PDF.
+            </li>
           </ul>
         </div>
       </div>
@@ -74,68 +82,92 @@
   </div>
 
   <!-- =========================================================================
-       TOP HEADER
+       UNIFIED STICKY TOP HEADER & NAVIGATION BAR
        ========================================================================= -->
-  <header class="app-header">
-    <div class="brand-box">
-      <img src="/assets/kkvn_logo.jpg" alt="KKVN Logo" class="brand-logo">
-      <div class="brand-title">
-        <h1>HỆ THỐNG TRA CỨU CẤU HÌNH & LẬP BÁO GIÁ – KYOWA KAKO VIỆT NAM</h1>
-        <p>Hệ thống tháp xử lý khí (FSD / FSW / EMR HR), Thiết bị quạt – bơm – phụ kiện & Dịch vụ kỹ thuật</p>
-      </div>
-    </div>
-
-    <div class="header-controls">
-      <div class="user-profile-pill">
-        <div class="user-avatar" id="headerAvatar">K</div>
-        <div>
-          <div style="display:flex; align-items:center; gap:6px;">
-            <strong id="headerUserName" style="font-size:13.5px;">Đang tải...</strong>
-            <span id="roleBadge" class="role-badge admin">QUẢN LÝ</span>
-          </div>
-          <div id="headerUserTitle" style="font-size:11.5px; color:#cbd5e1;">Phòng Kinh Doanh</div>
+  <div class="top-shell">
+    <header class="app-header">
+      <div class="brand-box">
+        <img src="/assets/kkvn_logo.jpg" alt="KKVN Logo" class="brand-logo">
+        <div class="brand-title">
+          <h1>KYOWA KAKO VIỆT NAM</h1>
+          <span class="brand-divider">|</span>
+          <span class="brand-subtitle">Hệ Thống Tra Cứu Cấu Hình & Lập Báo Giá (FSD · FSW · EMR HR)</span>
         </div>
       </div>
 
-      <button class="btn btn-sm" style="background:rgba(255,255,255,0.14);color:#fff;border-color:rgba(255,255,255,0.28)"
-              onclick="App.showTab('users')" title="Quản lý tài khoản & Phân quyền">
-        👥 Tài khoản & Phân quyền
-      </button>
-      <button class="btn btn-sm" style="background:rgba(255,255,255,0.14);color:#fff;border-color:rgba(255,255,255,0.28)"
-              onclick="App.openChangePasswordModal()" title="Đổi mật khẩu cá nhân">
-        🔑 Đổi mật khẩu
-      </button>
-      <button class="btn btn-sm btn-danger" onclick="App.logout()" title="Đăng xuất tài khoản">
-        🚪 Đăng xuất
-      </button>
-    </div>
-  </header>
+      <div class="header-controls">
 
-  <!-- NAVIGATION TABS -->
-  <nav class="nav-bar">
-    <button class="nav-tab active" id="tabBtn-flow1" onclick="App.showTab('flow1')">
-      <span>1. Luồng 1 – Báo Giá Cơ Bản</span>
-    </button>
-    <button class="nav-tab" id="tabBtn-flow2" onclick="App.showTab('flow2')">
-      <span>2. Luồng 2 – Báo Giá Chi Tiết</span>
-      <span class="nav-badge" id="activeQuoteBadge">Đang mở</span>
-    </button>
-    <button class="nav-tab" id="tabBtn-print" onclick="App.showTab('print')">
-      <span>3. Bản In / Xuất PDF Chuẩn Mẫu KKVN</span>
-    </button>
-    <button class="nav-tab" id="tabBtn-quotes" onclick="App.showTab('quotes')">
-      <span>4. Hồ Sơ Báo Giá & Phê Duyệt</span>
-      <span class="nav-badge" id="quotesCountBadge">0</span>
-    </button>
-    <button class="nav-tab" id="tabBtn-catalog" onclick="App.showTab('catalog')">
-      <span>5. Quản Trị Danh Mục & Excel</span>
-      <span class="nav-badge" id="modelsCountBadge">64</span>
-    </button>
-    <button class="nav-tab" id="tabBtn-users" onclick="App.showTab('users')">
-      <span>6. Quản Lý Tài Khoản & Phân Quyền</span>
-      <span class="nav-badge" id="usersCountBadge">4</span>
-    </button>
-  </nav>
+
+        <!-- User Account Dropdown -->
+        <div class="user-menu-wrap" id="userMenuWrap">
+          <button type="button" class="user-profile-trigger" onclick="App.toggleUserDropdown(event)">
+            <div class="user-avatar" id="headerAvatar">K</div>
+            <div class="user-trigger-text">
+              <span class="user-trigger-name" id="headerUserName">Đang tải...</span>
+              <span id="roleBadge" class="role-badge admin">QUẢN LÝ</span>
+            </div>
+            <span class="user-caret">▾</span>
+          </button>
+
+          <div id="userDropdownMenu" class="user-dropdown-menu hidden">
+            <div class="dropdown-user-header">
+              <div style="font-weight:700; color:var(--navy-dark); font-size:13.5px;" id="dropdownFullName">Mr Bảo
+                Trường</div>
+              <div style="font-size:12px; color:var(--muted); margin-top:2px;" id="dropdownUserTitle">Quản lý Kinh doanh
+              </div>
+              <div style="font-size:11.5px; color:var(--green-dark); font-weight:600; margin-top:4px;"
+                id="dropdownPermHint">
+                Quyền: Xem Giá Cost · Duyệt BG · Quản lý TK
+              </div>
+            </div>
+
+            <button type="button" class="dropdown-item" onclick="App.closeUserDropdown(); App.showTab('users')">
+              <span>👥 Quản lý Tài khoản & Phân quyền</span>
+            </button>
+            <button type="button" class="dropdown-item"
+              onclick="App.closeUserDropdown(); App.openChangePasswordModal()">
+              <span>🔑 Đổi mật khẩu cá nhân</span>
+            </button>
+
+            <div class="dropdown-divider"></div>
+            <div class="dropdown-section-label">Chuyển nhanh tài khoản (Demo)</div>
+            <div id="dropdownQuickSwitchList"></div>
+
+            <div class="dropdown-divider"></div>
+            <button type="button" class="dropdown-item danger" onclick="App.closeUserDropdown(); App.logout()">
+              <span>🚪 Đăng xuất</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- NAVIGATION TABS -->
+    <nav class="nav-bar">
+      <button class="nav-tab active" id="tabBtn-flow1" onclick="App.showTab('flow1')">
+        <span>📝 1. Báo Giá Cơ Bản</span>
+      </button>
+      <button class="nav-tab" id="tabBtn-flow2" onclick="App.showTab('flow2')">
+        <span>📝 2. Báo Giá Chi Tiết</span>
+        <span class="nav-badge" id="activeQuoteBadge">Đang mở</span>
+      </button>
+      <button class="nav-tab" id="tabBtn-print" onclick="App.showTab('print')">
+        <span>🖨️ 3. Bản In / Xuất PDF (A4)</span>
+      </button>
+      <button class="nav-tab" id="tabBtn-quotes" onclick="App.showTab('quotes')">
+        <span>📁 4. Hồ Sơ & Phê Duyệt</span>
+        <span class="nav-badge" id="quotesCountBadge">0</span>
+      </button>
+      <button class="nav-tab" id="tabBtn-catalog" onclick="App.showTab('catalog')">
+        <span>🗂️ 5. Danh Mục & Excel</span>
+        <span class="nav-badge" id="modelsCountBadge">64</span>
+      </button>
+      <button class="nav-tab" id="tabBtn-users" onclick="App.showTab('users')">
+        <span>👥 6. Tài Khoản & Phân Quyền</span>
+        <span class="nav-badge" id="usersCountBadge">4</span>
+      </button>
+    </nav>
+  </div>
 
   <!-- MAIN CONTENT -->
   <main class="main-wrap">
@@ -195,4 +227,5 @@
 
   <script src="/app.js"></script>
 </body>
+
 </html>
