@@ -991,7 +991,7 @@ const App = (() => {
 
         <div class="grid-2">
           <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
-            <strong style="color:var(--red); display:block; margin-bottom:8px;">THÔNG TIN KHÁCH HÀNG (Bên Trái Báo Giá)</strong>
+            <strong style="color:var(--red); display:block; margin-bottom:8px;">THÔNG TIN KHÁCH HÀNG</strong>
             <div class="grid-2" style="gap:10px;">
               <label class="field" style="grid-column: 1 / -1;">
                 Tên công ty Khách hàng
@@ -1021,7 +1021,7 @@ const App = (() => {
           </div>
 
           <div style="background:#f0f4fa; padding:12px; border-radius:8px; border:1px solid var(--border);">
-            <strong style="color:var(--navy); display:block; margin-bottom:8px;">KYOWA KAKO VIET NAM CO., LTD (Bên Phải Báo Giá)</strong>
+            <strong style="color:var(--navy); display:block; margin-bottom:8px;">KYOWA KAKO VIET NAM CO., LTD</strong>
             <div class="grid-2" style="gap:10px;">
               <label class="field" style="grid-column: 1 / -1;">
                 住所 Địa chỉ nhà máy KKVN
