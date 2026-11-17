@@ -3,6 +3,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
+const PYTHON_BIN = process.platform === 'win32' ? 'python' : 'python3';
+
 /**
  * Parse a "Data báo giá.xlsx" buffer or file path using Python's built-in zipfile + ElementTree.
  */
@@ -124,7 +126,7 @@ for r in range(2, max_r3 + 1):
 print(json.dumps({'models': models, 'instruments': instruments}, ensure_ascii=False))
 `;
 
-  const out = execFileSync('python', ['-c', pyScript, filePath], { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+  const out = execFileSync(PYTHON_BIN, ['-c', pyScript, filePath], { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
   return JSON.parse(out.trim());
 }
 
@@ -244,7 +246,7 @@ with zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED) as z:
     z.writestr('xl/worksheets/sheet3.xml', build_sheet_xml(s3_rows))
 `;
 
-  execFileSync('python', ['-c', pyScript, tmpInput, tmpOutput]);
+  execFileSync(PYTHON_BIN, ['-c', pyScript, tmpInput, tmpOutput]);
   const buf = fs.readFileSync(tmpOutput);
   try {
     fs.unlinkSync(tmpInput);
