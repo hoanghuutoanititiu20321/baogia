@@ -931,8 +931,8 @@ const App = (() => {
       ${!canEdit ? `
         <div class="alert-box alert-warn" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
           <div>
-            ${q.status === 'approved' ? `
-              <strong>Báo giá đã được phê duyệt (Đã khóa chỉnh sửa):</strong> Hồ sơ <strong>${esc(q.quote_number)}</strong> đã được duyệt nên không thể sửa trực tiếp để đảm bảo tính toàn vẹn dữ liệu. Nếu cần điều chỉnh cho khách hàng, vui lòng tạo <strong>Phiên bản mới (Revision +1)</strong>.
+            ${(q.status === 'approved' || q.status === 'sent') ? `
+              <strong>Báo giá đã ${q.status === 'sent' ? 'gửi khách hàng' : 'được phê duyệt'} (Đã khóa chỉnh sửa):</strong> Hồ sơ <strong>${esc(q.quote_number)}</strong> đã được duyệt nên không thể sửa trực tiếp để đảm bảo tính toàn vẹn dữ liệu. Nếu cần điều chỉnh cho khách hàng, vui lòng tạo <strong>Phiên bản mới (Revision +1)</strong>.
             ` : `
               <strong>Chế độ Chỉ xem (Read-only):</strong> Báo giá này do tài khoản <strong>@${esc(q.created_by || 'khác')}</strong> tạo.
               Theo quy định phân quyền, chỉ <strong>người tạo báo giá</strong> hoặc <strong>Admin</strong> mới có quyền chỉnh sửa nội dung.
@@ -958,7 +958,7 @@ const App = (() => {
               Khách hàng: <strong>${esc(q.customer_name)}</strong> · Dự án: <strong>${esc(q.project_name || '—')}</strong>
               · Người tạo: <strong>@${esc(q.created_by || state.currentUser?.username || '—')}</strong>
               ${q.updated_at ? ` · Cập nhật gần nhất: <strong>${esc(formatDateTimeVN(q.updated_at))}</strong>` : ''}
-              ${q.status === 'approved' && (q.approved_by || q.approver_name) ? ` · Duyệt bởi: <strong style="color:var(--green)">${esc(q.approved_by || q.approver_name)}</strong>` : ''}
+              ${(q.status === 'approved' || q.status === 'sent') && (q.approved_by || q.approver_name) ? ` · Duyệt bởi: <strong style="color:var(--green)">${esc(q.approved_by || q.approver_name)}</strong>` : ''}
             </div>
           </div>
 
@@ -986,8 +986,8 @@ const App = (() => {
               ` : ''}
             ` : `
               <button class="btn" disabled style="opacity:0.65;cursor:not-allowed;"
-                      title="${q.status === 'approved' ? 'Báo giá đã duyệt không được chỉnh sửa trực tiếp' : `Chỉ người tạo (@${esc(q.created_by)}) hoặc Admin mới có quyền chỉnh sửa`}">
-                🔒 ${q.status === 'approved' ? 'Đã duyệt (Khóa sửa)' : 'Chỉ xem'}
+                      title="${(q.status === 'approved' || q.status === 'sent') ? 'Báo giá đã duyệt/gửi KH không được chỉnh sửa trực tiếp' : `Chỉ người tạo (@${esc(q.created_by)}) hoặc Admin mới có quyền chỉnh sửa`}">
+                🔒 ${(q.status === 'approved' || q.status === 'sent') ? 'Đã duyệt (Khóa sửa)' : 'Chỉ xem'}
               </button>
             `}
             ${q.id ? `
@@ -995,9 +995,14 @@ const App = (() => {
                 📑 Tạo Phiên Bản Mới (Rev +1)
               </button>
             ` : ''}
-            ${q.id && canApprove && q.status !== 'approved' ? `
+            ${q.id && canApprove && q.status !== 'approved' && q.status !== 'sent' ? `
               <button class="btn btn-primary" style="background:#0284c7;border-color:#0284c7" onclick="App.changeQuoteStatus(${q.id}, 'approved')">
                 ✅ Phê Duyệt Báo Giá
+              </button>
+            ` : ''}
+            ${canUserMarkSent(q) ? `
+              <button class="btn" style="background:#2563eb;color:#fff;border-color:#1d4ed8;" onclick="App.changeQuoteStatus(${q.id}, 'sent')" title="Xác nhận báo giá này đã được xuất và gửi cho khách hàng">
+                📨 Đánh dấu Đã gửi KH
               </button>
             ` : ''}
             <button class="btn btn-navy" onclick="App.showTab('print')">
@@ -2234,9 +2239,15 @@ const App = (() => {
 
   function canUserEditQuote(q) {
     if (!q || !q.id) return true; // New unsaved quotation can be created by anyone
-    if (q.status === 'approved') return false; // Approved quotations are locked and cannot be edited
+    if (q.status === 'approved' || q.status === 'sent') return false; // Approved or Sent quotations are locked
     if (!state.currentUser) return false;
     return state.currentUser.role === 'admin' || q.created_by === state.currentUser.username;
+  }
+
+  function canUserMarkSent(q) {
+    if (!q || !q.id || q.status !== 'approved') return false;
+    if (!state.currentUser) return false;
+    return state.currentUser.role === 'admin' || state.permissions.canApproveQuote || q.created_by === state.currentUser.username;
   }
 
   function formatDateTimeVN(dtStr) {
@@ -2392,15 +2403,29 @@ const App = (() => {
     const totalStr = target ? fmtVnd(target.total_after_tax) + ' VND' : '';
 
     const isApprove = status === 'approved';
-    const title = isApprove ? '✅ Xác Nhận Phê Duyệt Báo Giá' : '📤 Xác Nhận Gửi Duyệt Báo Giá';
-    const actionLabel = isApprove ? 'PHÊ DUYỆT' : 'GỬI DUYỆT';
+    const isSent = status === 'sent';
+    const title = isApprove
+      ? '✅ Xác Nhận Phê Duyệt Báo Giá'
+      : isSent
+        ? '📨 Xác Nhận Đã Gửi Báo Giá Cho Khách Hàng'
+        : '📤 Xác Nhận Gửi Duyệt Báo Giá';
+    const actionLabel = isApprove
+      ? 'PHÊ DUYỆT'
+      : isSent
+        ? 'ĐÁNH DẤU ĐÃ GỬI KHÁCH HÀNG'
+        : 'GỬI DUYỆT';
+    const okText = isApprove
+      ? '✅ Xác nhận Phê duyệt'
+      : isSent
+        ? '📨 Xác nhận Đã gửi KH'
+        : '📤 Xác nhận Gửi duyệt';
 
     openConfirmModal({
       title,
-      okText: isApprove ? '✅ Xác nhận Phê duyệt' : '📤 Xác nhận Gửi duyệt',
+      okText,
       isDanger: false,
       messageHtml: `
-        Bạn có chắc chắn muốn <strong>${actionLabel}</strong> hồ sơ báo giá này không?
+        Bạn có chắc chắn muốn <strong>${actionLabel}</strong> đối với hồ sơ báo giá này không?
         <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;">
           <div>• Số báo giá: <strong style="color:var(--navy)">${esc(qNum)}</strong></div>
           <div>• Khách hàng: <strong>${esc(cName)}</strong></div>
@@ -2566,6 +2591,11 @@ const App = (() => {
             <button class="btn" onclick="App.showTab('flow2')">
               ✏️ Quay lại Chỉnh sửa
             </button>
+            ${canUserMarkSent(q) ? `
+              <button class="btn" style="background:#2563eb;color:#fff;border-color:#1d4ed8;" onclick="App.changeQuoteStatus(${q.id}, 'sent')">
+                📨 Đánh dấu Đã gửi KH
+              </button>
+            ` : ''}
             <button class="btn btn-primary" onclick="window.print()">
               🖨️ In / Lưu File PDF (Chuẩn A4)
             </button>
@@ -2837,8 +2867,9 @@ const App = (() => {
             <tbody>
               ${filtered.map(q => {
       const canEditRow = canUserEditQuote(q);
-      const viewTooltip = q.status === 'approved'
-        ? 'Báo giá Đã duyệt (Khóa chỉnh sửa - Nhấn để xem chi tiết)'
+      const canMarkSentRow = canUserMarkSent(q);
+      const viewTooltip = (q.status === 'approved' || q.status === 'sent')
+        ? `Báo giá ${q.status === 'sent' ? 'Đã gửi KH' : 'Đã duyệt'} (Khóa chỉnh sửa - Nhấn để xem chi tiết)`
         : `Báo giá do @${esc(q.created_by)} tạo (Chế độ Chỉ xem)`;
       return `
                 <tr>
@@ -2853,7 +2884,7 @@ const App = (() => {
                   </td>
                   <td>
                     <div><strong>${esc(q.pic_name)}</strong></div>
-                    ${q.status === 'approved' ? `<div style="font-size:11px;color:var(--green);font-weight:600;">✓ Duyệt: ${esc(q.approved_by || q.approver_name)}</div>` : ''}
+                    ${(q.status === 'approved' || q.status === 'sent') ? `<div style="font-size:11px;color:var(--green);font-weight:600;">✓ Duyệt: ${esc(q.approved_by || q.approver_name)}</div>` : ''}
                   </td>
                   <td class="c" style="font-size:11.5px;line-height:1.3;padding:6px 6px;">
                     ${(() => {
@@ -2887,8 +2918,11 @@ const App = (() => {
                       ${canEditRow && (q.status === 'draft' || q.status === 'rejected') ? `
                         <button class="btn btn-icon" style="background:#fef3c7;border-color:#f59e0b;color:#b45309;" onclick="App.changeQuoteStatus(${q.id}, 'pending_approval')" title="Gửi duyệt báo giá này">📤</button>
                       ` : ''}
-                      ${canApprove && q.status !== 'approved' ? `
+                      ${canApprove && q.status !== 'approved' && q.status !== 'sent' ? `
                         <button class="btn btn-icon btn-primary" onclick="App.changeQuoteStatus(${q.id}, 'approved')" title="Phê duyệt báo giá">✅</button>
+                      ` : ''}
+                      ${canMarkSentRow ? `
+                        <button class="btn btn-icon" style="background:#dbeafe;border-color:#60a5fa;color:#1d4ed8;" onclick="App.changeQuoteStatus(${q.id}, 'sent')" title="Đánh dấu Đã gửi báo giá cho Khách hàng">📨</button>
                       ` : ''}
                       ${canDelete ? `
                         <button class="btn btn-icon btn-danger" onclick="App.deleteQuote(${q.id})" title="Xóa báo giá">🗑</button>

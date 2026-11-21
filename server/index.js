@@ -526,10 +526,10 @@ const server = http.createServer(async (req, res) => {
         const existing = db.prepare('SELECT * FROM quotations WHERE id = ?').get(id);
         if (!existing) return sendJson(res, 404, { error: 'Không tìm thấy báo giá' });
 
-        // Rule 1: Approved quotations are locked and cannot be edited directly
-        if (existing.status === 'approved') {
+        // Rule 1: Approved or Sent quotations are locked and cannot be edited directly
+        if (existing.status === 'approved' || existing.status === 'sent') {
           return sendJson(res, 403, {
-            error: `Báo giá ${existing.quote_number} đã được phê duyệt nên đã khóa chỉnh sửa. Vui lòng tạo Phiên bản mới (Revision +1) để điều chỉnh.`
+            error: `Báo giá ${existing.quote_number} đã được phê duyệt / gửi khách hàng nên đã khóa chỉnh sửa. Vui lòng tạo Phiên bản mới (Revision +1) để điều chỉnh.`
           });
         }
 
@@ -719,9 +719,21 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
+        if (nextStatus === 'sent') {
+          if (existing.status !== 'approved') {
+            return sendJson(res, 400, { error: 'Chỉ báo giá Đã duyệt mới có thể chuyển sang trạng thái Đã gửi KH.' });
+          }
+          const isCreator = existing.created_by === currentUser.username;
+          const isAdmin = currentUser.role === 'admin';
+          if (!isCreator && !isAdmin && !perms.canApproveQuote) {
+            return sendJson(res, 403, { error: 'Chỉ người tạo báo giá hoặc Quản lý/Admin mới có quyền đánh dấu Đã gửi KH.' });
+          }
+        }
+
         const isApproving = nextStatus === 'approved';
-        const approvedBy = isApproving ? currentUser.full_name : null;
-        const approvedAt = isApproving ? nowVN() : null;
+        const keepApprovedInfo = nextStatus === 'sent';
+        const approvedBy = isApproving ? currentUser.full_name : (keepApprovedInfo ? existing.approved_by : null);
+        const approvedAt = isApproving ? nowVN() : (keepApprovedInfo ? existing.approved_at : null);
         db.prepare(`
           UPDATE quotations
           SET status = ?, approved_by = ?, approved_at = ?, updated_at = datetime('now', '+7 hours')
