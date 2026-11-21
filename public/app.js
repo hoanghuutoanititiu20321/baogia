@@ -1321,9 +1321,6 @@ const App = (() => {
 
                           <div style="margin-top:6px;">
                             <div class="row-between" style="margin-bottom:4px;">
-                              <span style="font-size:11.5px;color:var(--muted);font-weight:600;">
-                                Các dòng mô tả chi tiết đi kèm dưới hạng mục (${(it.sub_lines || []).length} dòng):
-                              </span>
                               <button class="btn btn-sm" style="padding:2px 8px;font-size:11px;" onclick="App.addSubLine(${sIdx}, ${iIdx})">
                                 + Thêm dòng mô tả con
                               </button>
