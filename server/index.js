@@ -6,6 +6,8 @@ const crypto = require('node:crypto');
 const { URL } = require('node:url');
 const {
   db,
+  nowVN,
+  todayVN,
   hashPassword,
   verifyPassword,
   getDefaultPermissionsForRole,
@@ -86,7 +88,7 @@ function getAuthenticatedUser(req, parsedUrl) {
 
   if (token) {
     const sess = db.prepare(`
-      SELECT * FROM sessions WHERE token = ? AND expires_at > datetime('now', 'localtime')
+      SELECT * FROM sessions WHERE token = ? AND expires_at > datetime('now', '+7 hours')
     `).get(token);
     if (sess) {
       const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(sess.user_id);
@@ -184,11 +186,11 @@ const server = http.createServer(async (req, res) => {
       const token = crypto.randomBytes(32).toString('hex');
       db.prepare(`
         INSERT INTO sessions (token, user_id, username, created_at, expires_at)
-        VALUES (?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime', '+7 days'))
+        VALUES (?, ?, ?, datetime('now', '+7 hours'), datetime('now', '+7 hours', '+7 days'))
       `).run(token, userRow.id, userRow.username);
 
       db.prepare(`
-        UPDATE users SET last_login = datetime('now', 'localtime') WHERE id = ?
+        UPDATE users SET last_login = datetime('now', '+7 hours') WHERE id = ?
       `).run(userRow.id);
 
       const updatedUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userRow.id);
@@ -470,7 +472,7 @@ const server = http.createServer(async (req, res) => {
             ?, ?, ?,
             ?, ?, ?,
             ?, ?, ?, ?,
-            datetime('now', 'localtime'), datetime('now', 'localtime')
+            datetime('now', '+7 hours'), datetime('now', '+7 hours')
           )
         `);
 
@@ -479,7 +481,7 @@ const server = http.createServer(async (req, res) => {
           baseCode,
           rev,
           body.parent_quote_id || null,
-          body.quote_date || new Date().toISOString().slice(0, 10),
+          body.quote_date || todayVN(),
           body.doc_title || '御見積 BÁO GIÁ',
           body.flow_type || 'detailed',
           body.layout_template || 'tower_bundle',
@@ -582,7 +584,7 @@ const server = http.createServer(async (req, res) => {
             sections_json = ?,
             terms_json = ?,
             internal_notes = ?,
-            updated_at = datetime('now', 'localtime')
+            updated_at = datetime('now', '+7 hours')
           WHERE id = ?
         `).run(
           body.quote_number || existing.quote_number,
@@ -648,7 +650,7 @@ const server = http.createServer(async (req, res) => {
         const maxRevRow = db.prepare('SELECT MAX(revision) as max_rev FROM quotations WHERE base_code = ?').get(orig.base_code);
         const nextRev = (maxRevRow?.max_rev || orig.revision || 1) + 1;
         const nextQuoteNumber = `${orig.base_code}-${String(nextRev).padStart(2, '0')}`;
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayVN();
 
         const info = db.prepare(`
           INSERT INTO quotations (
@@ -674,7 +676,7 @@ const server = http.createServer(async (req, res) => {
             ?, ?, ?,
             ?, ?, ?,
             ?, ?, ?, ?,
-            datetime('now', 'localtime'), datetime('now', 'localtime')
+            datetime('now', '+7 hours'), datetime('now', '+7 hours')
           )
         `).run(
           nextQuoteNumber, orig.base_code, nextRev, orig.id, today,
@@ -706,10 +708,10 @@ const server = http.createServer(async (req, res) => {
         }
         const isApproving = nextStatus === 'approved';
         const approvedBy = isApproving ? currentUser.full_name : null;
-        const approvedAt = isApproving ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null;
+        const approvedAt = isApproving ? nowVN() : null;
         db.prepare(`
           UPDATE quotations
-          SET status = ?, approved_by = ?, approved_at = ?, updated_at = datetime('now', 'localtime')
+          SET status = ?, approved_by = ?, approved_at = ?, updated_at = datetime('now', '+7 hours')
           WHERE id = ?
         `).run(nextStatus, approvedBy, approvedAt, id);
         const updated = db.prepare('SELECT * FROM quotations WHERE id = ?').get(id);

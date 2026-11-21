@@ -87,11 +87,22 @@ function parseUserPermissions(userRow) {
   return defaults;
 }
 
+// Vietnam Time (UTC+7) helpers independent of VPS OS timezone
+function nowVN() {
+  const d = new Date(Date.now() + 7 * 3600 * 1000);
+  return d.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function todayVN() {
+  const d = new Date(Date.now() + 7 * 3600 * 1000);
+  return d.toISOString().slice(0, 10);
+}
+
 function logAudit(username, fullName, action, details = '') {
   try {
     db.prepare(`
       INSERT INTO audit_logs (username, full_name, action, details, created_at)
-      VALUES (?, ?, ?, ?, datetime('now', 'localtime'))
+      VALUES (?, ?, ?, ?, datetime('now', '+7 hours'))
     `).run(username || 'system', fullName || '', action, details);
   } catch (err) {
     console.error('Audit log error:', err);
@@ -120,14 +131,14 @@ function initDatabase() {
       permissions_json TEXT,
       is_active INTEGER NOT NULL DEFAULT 1,
       last_login TEXT,
-      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+      created_at TEXT DEFAULT (datetime('now', '+7 hours'))
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
       token TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL,
       username TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      created_at TEXT DEFAULT (datetime('now', '+7 hours')),
       expires_at TEXT NOT NULL
     );
 
@@ -137,7 +148,7 @@ function initDatabase() {
       full_name TEXT,
       action TEXT NOT NULL,
       details TEXT,
-      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+      created_at TEXT DEFAULT (datetime('now', '+7 hours'))
     );
 
     CREATE TABLE IF NOT EXISTS tower_models (
@@ -230,8 +241,8 @@ function initDatabase() {
       created_by TEXT DEFAULT 'baotruong',
       approved_by TEXT,
       approved_at TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
+      created_at TEXT DEFAULT (datetime('now', '+7 hours')),
+      updated_at TEXT DEFAULT (datetime('now', '+7 hours'))
     );
   `);
 
@@ -435,6 +446,8 @@ initDatabase();
 
 module.exports = {
   db,
+  nowVN,
+  todayVN,
   hashPassword,
   verifyPassword,
   getDefaultPermissionsForRole,

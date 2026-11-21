@@ -598,7 +598,7 @@ const App = (() => {
     const m = getSelectedF1Model();
     if (!m) return;
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
     const seq = String(state.quotations.length + 26).padStart(3, '0');
     const baseCode = `2601-${seq}`;
     const quoteNumber = `${baseCode}-01`;
@@ -2039,7 +2039,7 @@ const App = (() => {
   }
 
   function createBlankQuoteTemplate(templateType) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
     const seq = String(state.quotations.length + 30).padStart(3, '0');
     const baseCode = `2601-${seq}`;
     const quoteNumber = `${baseCode}-01`;
@@ -3255,7 +3255,7 @@ const App = (() => {
           <div class="kpi-val">${saleCount} tài khoản</div>
         </div>
         <div class="kpi-box">
-          <div class="kpi-label">Tài khoản đang bạn đăng nhập</div>
+          <div class="kpi-label">Tài khoản đang đăng nhập</div>
           <div class="kpi-val">${esc(state.currentUser?.full_name || '')}</div>
         </div>
       </div>
