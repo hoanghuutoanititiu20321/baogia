@@ -190,7 +190,7 @@ const App = (() => {
   async function logout() {
     try {
       if (state.authToken) {
-        await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
+        await api('/api/auth/logout', { method: 'POST' }).catch(() => { });
       }
     } finally {
       state.authToken = '';
@@ -630,7 +630,7 @@ const App = (() => {
               quantity: 1,
               cost_price: prodCostSum,
               base_price: prodBaseSum,
-              adjustment: 0,
+              adjustment: 1,
               unit_price: prodBaseSum,
               total_price: prodBaseSum,
               remark: 'KYOWA VN',
@@ -662,21 +662,21 @@ const App = (() => {
               id: 'item-b1', stt: '1', item_type: 'service_mgmt',
               name_jp: '現場管理・設計・試運転費', name_vi: 'Thiết kế, quản lí, vận hành',
               specs_text: '', unit: 'Lot/Lần', quantity: 1,
-              cost_price: m.mgmt_cost || 0, base_price: m.mgmt_base || 0, adjustment: 0,
+              cost_price: m.mgmt_cost || 0, base_price: m.mgmt_base || 0, adjustment: 1,
               unit_price: m.mgmt_base || 0, total_price: m.mgmt_base || 0, remark: ''
             },
             {
               id: 'item-b2', stt: '2', item_type: 'service',
               name_jp: '運送費', name_vi: 'Vận chuyển',
               specs_text: '', unit: 'Lot/Lần', quantity: 1,
-              cost_price: 18000000, base_price: 26000000, adjustment: 0,
+              cost_price: 18000000, base_price: 26000000, adjustment: 1,
               unit_price: 26000000, total_price: 26000000, remark: 'ko cẩu vào vị trí'
             },
             {
               id: 'item-b3', stt: '3', item_type: 'service',
               name_jp: '現場設置', name_vi: 'Lắp đặt tại công trình',
               specs_text: '', unit: 'Lot/Lần', quantity: 1,
-              cost_price: 70000000, base_price: 104000000, adjustment: 0,
+              cost_price: 70000000, base_price: 104000000, adjustment: 1,
               unit_price: 104000000, total_price: 104000000, remark: ''
             }
           ]
@@ -696,35 +696,35 @@ const App = (() => {
               id: 'item-1', stt: '1', item_type: 'tower',
               name_jp: '洗浄塔', name_vi: `Hệ tháp xử lý ${m.product_line} - Model ${m.model_code} (${m.flow_rate} m³/min, FRP)`,
               specs_text: `KT tham khảo: ${m.specs?.tower_dim || ''} · Đã gồm đo mức x2, van điện từ x1, đồng hồ chênh áp x1`,
-              unit: 'Set/Bộ', quantity: 1, cost_price: m.tower_cost, base_price: m.tower_base, adjustment: 0,
+              unit: 'Set/Bộ', quantity: 1, cost_price: m.tower_cost, base_price: m.tower_base, adjustment: 1,
               unit_price: m.tower_base, total_price: m.tower_base, remark: 'KYOWA VN', sub_lines: []
             },
             {
               id: 'item-2', stt: '2', item_type: 'fan',
               name_jp: '排気ファン', name_vi: `Quạt hút ${m.fan_model} (FRP)`,
               specs_text: `${m.flow_cmh} CMH   ${m.fan_pressure_pa} Pa   ${m.motor_kw} Kw, 3phase ,380V,50Hz, 4P,IE3`,
-              unit: 'Set/Bộ', quantity: 1, cost_price: m.fan_cost, base_price: m.fan_base, adjustment: 0,
+              unit: 'Set/Bộ', quantity: 1, cost_price: m.fan_cost, base_price: m.fan_base, adjustment: 1,
               unit_price: m.fan_base, total_price: m.fan_base, remark: 'KYOWA', sub_lines: []
             },
             {
               id: 'item-3', stt: '3', item_type: 'pump',
               name_jp: '循環ポンプ', name_vi: `Bơm tuần hoàn ${m.pump_model}`,
               specs_text: m.specs?.pump_spec || m.pump_model,
-              unit: 'Set/Bộ', quantity: 1, cost_price: m.pump_cost, base_price: m.pump_base, adjustment: 0,
+              unit: 'Set/Bộ', quantity: 1, cost_price: m.pump_cost, base_price: m.pump_base, adjustment: 1,
               unit_price: m.pump_base, total_price: m.pump_base, remark: 'KYOWA JP', sub_lines: []
             },
             {
               id: 'item-4', stt: '4', item_type: 'panel',
               name_jp: '制御盤', name_vi: 'Tủ điện điều khiển + Đấu dây',
               specs_text: '',
-              unit: 'Set/Bộ', quantity: 1, cost_price: m.panel_cost, base_price: m.panel_base, adjustment: 0,
+              unit: 'Set/Bộ', quantity: 1, cost_price: m.panel_cost, base_price: m.panel_base, adjustment: 1,
               unit_price: m.panel_base, total_price: m.panel_base, remark: 'KYOWA VN', sub_lines: []
             },
             {
               id: 'item-5', stt: '5', item_type: 'stage',
               name_jp: '架台・階段', name_vi: 'Hệ sắt Stage, Ladder, sàn thao tác, ống khói',
               specs_text: `Ống khói: ${m.specs?.stack_dim || 'φ 350 x 850 H'}`,
-              unit: 'Set/Bộ', quantity: 1, cost_price: m.stage_cost, base_price: m.stage_base, adjustment: 0,
+              unit: 'Set/Bộ', quantity: 1, cost_price: m.stage_cost, base_price: m.stage_base, adjustment: 1,
               unit_price: m.stage_base, total_price: m.stage_base, remark: 'KYOWA VN', sub_lines: []
             }
           ]
@@ -741,21 +741,21 @@ const App = (() => {
               id: 'item-b1', stt: '1', item_type: 'service_mgmt',
               name_jp: '現場管理・設計・試運転費', name_vi: 'Thiết kế, quản lí, vận hành',
               specs_text: 'Khoản 5% tách từ cấu hình cơ bản', unit: 'Lot/Lần', quantity: 1,
-              cost_price: m.mgmt_cost, base_price: m.mgmt_base, adjustment: 0,
+              cost_price: m.mgmt_cost, base_price: m.mgmt_base, adjustment: 1,
               unit_price: m.mgmt_base, total_price: m.mgmt_base, remark: ''
             },
             {
               id: 'item-b2', stt: '2', item_type: 'service',
               name_jp: '運送費', name_vi: 'Vận chuyển',
               specs_text: '', unit: 'Lot/Lần', quantity: 1,
-              cost_price: 18000000, base_price: 26000000, adjustment: 0,
+              cost_price: 18000000, base_price: 26000000, adjustment: 1,
               unit_price: 26000000, total_price: 26000000, remark: 'ko cẩu vào vị trí'
             },
             {
               id: 'item-b3', stt: '3', item_type: 'service',
               name_jp: '現場設置', name_vi: 'Lắp đặt tại công trình',
               specs_text: '', unit: 'Lot/Lần', quantity: 1,
-              cost_price: 70000000, base_price: 104000000, adjustment: 0,
+              cost_price: 70000000, base_price: 104000000, adjustment: 1,
               unit_price: 104000000, total_price: 104000000, remark: ''
             }
           ]
@@ -827,6 +827,48 @@ const App = (() => {
   // ===========================================================================
   // TAB 2: FLOW 2 – LẬP & ĐIỀU CHỈNH BÁO GIÁ CHI TIẾT
   // ===========================================================================
+  function normalizeItemPricing(it) {
+    if (!it) return;
+    it.quantity = Math.max(1, Number(it.quantity || 1));
+    if (it.cost_price !== null && it.cost_price !== undefined) {
+      it.cost_price = Math.max(0, Number(it.cost_price || 0));
+    }
+    it.base_price = Math.max(0, Number(it.base_price || 0));
+
+    let adj = it.adjustment;
+    if (adj === null || adj === undefined || adj === '' || Number.isNaN(Number(adj))) {
+      adj = 1;
+    } else {
+      adj = Number(adj);
+    }
+
+    // Tương thích dữ liệu cũ (chênh lệch cộng/trừ VND chuyển sang hệ số nhân)
+    if (adj < 0) {
+      adj = (it.base_price > 0 && Number(it.unit_price) >= 0)
+        ? Number((Math.max(0, Number(it.unit_price)) / it.base_price).toFixed(4))
+        : 1;
+    } else if (adj === 0 && it.base_price > 0 && Number(it.unit_price) === it.base_price) {
+      adj = 1;
+    } else if (adj > 100 && it.base_price > 0) {
+      const legacyUnit = Number(it.unit_price) > 0 ? Number(it.unit_price) : (it.base_price + adj);
+      adj = Number((legacyUnit / it.base_price).toFixed(4));
+    }
+
+    it.adjustment = Math.max(0, adj);
+    if (it.unit_price === undefined || it.unit_price === null || Number.isNaN(Number(it.unit_price))) {
+      it.unit_price = Math.max(0, Math.round(it.base_price * it.adjustment));
+    } else if (!it._keepExactUnitPrice && it.base_price > 0) {
+      const expectedUnit = Math.max(0, Math.round(it.base_price * it.adjustment));
+      if (Math.abs(Number(it.unit_price) - expectedUnit) > Math.max(1000, it.base_price * 0.0002)) {
+        it.unit_price = expectedUnit;
+      } else {
+        it.unit_price = Math.max(0, Math.round(Number(it.unit_price)));
+      }
+    } else {
+      it.unit_price = Math.max(0, Math.round(Number(it.unit_price || 0)));
+    }
+  }
+
   function recalcActiveQuoteTotals() {
     const q = state.activeQuote;
     if (!q) return;
@@ -837,11 +879,10 @@ const App = (() => {
     (q.sections || []).forEach(sec => {
       let secTotal = 0;
       (sec.items || []).forEach(it => {
-        const qty = Number(it.quantity || 1);
-        const base = Number(it.base_price || 0);
-        const adj = Number(it.adjustment || 0);
-        const unitP = base + adj;
-        it.unit_price = unitP;
+        normalizeItemPricing(it);
+        const qty = it.quantity;
+        const base = it.base_price;
+        const unitP = it.unit_price;
         it.total_price = Math.round(unitP * qty);
         secTotal += it.total_price;
         subBeforeTax += it.total_price;
@@ -856,7 +897,7 @@ const App = (() => {
     q.subtotal_cost = subCost;
     q.subtotal_base = subBase;
     q.subtotal_before_tax = subBeforeTax;
-    q.vat_amount = Math.round(subBeforeTax * (Number(q.vat_percent || 0) / 100));
+    q.vat_amount = Math.round(subBeforeTax * (Math.max(0, Number(q.vat_percent || 0)) / 100));
     q.total_after_tax = subBeforeTax + q.vat_amount;
   }
 
@@ -1163,6 +1204,50 @@ const App = (() => {
           </div>
         </div>
 
+        ${(() => {
+        const allItems = (q.sections || []).flatMap(s => s.items || []);
+        const firstFactor = allItems.length > 0 ? Number(allItems[0].adjustment ?? 1) : 1;
+        const isUniform = allItems.length > 0 && allItems.every(it => Math.abs(Number(it.adjustment ?? 1) - firstFactor) < 0.0001);
+        const bulkVal = isUniform ? firstFactor : (q.bulk_factor ?? 1);
+        return `
+            <div style="background: linear-gradient(90deg, #f8fafc 0%, #eff6ff 100%); border: 1.5px solid #bfdbfe; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+              <div class="row-between" style="flex-wrap: wrap; gap: 12px;">
+                <div>
+                  <div class="row" style="align-items: center; gap: 8px; margin-bottom: 4px;">
+                    <strong style="color: var(--navy); font-size: 13.5px;">⚙️ Điều Chỉnh Hệ Số Chênh Lệch Giá (Đơn giá = Giá gốc × Hệ số)</strong>
+                    <span id="bulkFactorStatusBadge" class="status-pill ${isUniform ? 'status-approved' : 'status-pending_approval'}" style="font-size: 11.5px;">
+                      ${isUniform ? `Đang đồng bộ tất cả: ×${firstFactor}` : 'Đang tùy chỉnh riêng từng hạng mục'}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="row" style="align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <div style="display: flex; align-items: center; gap: 6px; background: #fff; padding: 5px 10px; border-radius: 6px; border: 1px solid #93c5fd;">
+                    <span style="font-size: 12.5px; font-weight: 700; color: var(--navy);">Hệ số tất cả: ×</span>
+                    <input type="number" id="bulkFactorInput" class="num" min="0" step="0.01"
+                           style="width: 82px; padding: 4px 6px; font-weight: 700; color: var(--navy); border: 1px solid #cbd5e1;"
+                           value="${bulkVal}"
+                           onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
+                           oninput="App.applyBulkFactorToAll(this.value, this, false)"
+                           onblur="App.handleBulkFactorBlur(this)">
+                    <button type="button" class="btn btn-sm btn-primary"
+                            onclick="App.applyBulkFactorToAll(document.getElementById('bulkFactorInput')?.value, document.getElementById('bulkFactorInput'), true)">
+                      Áp dụng tất cả
+                    </button>
+                  </div>
+                  <div class="row" style="gap: 4px;">
+                    <button type="button" class="btn btn-sm" style="padding: 4px 7px; font-size: 11.5px; font-weight: 700;" onclick="App.setQuickBulkFactor(1)" title="Đưa tất cả về Giá gốc cơ bản (×1)">×1.0 (Gốc)</button>
+                    <button type="button" class="btn btn-sm" style="padding: 4px 7px; font-size: 11.5px;" onclick="App.setQuickBulkFactor(1.05)" title="Tăng 5% toàn bộ">×1.05</button>
+                    <button type="button" class="btn btn-sm" style="padding: 4px 7px; font-size: 11.5px;" onclick="App.setQuickBulkFactor(1.1)" title="Tăng 10% toàn bộ">×1.1</button>
+                    <button type="button" class="btn btn-sm" style="padding: 4px 7px; font-size: 11.5px;" onclick="App.setQuickBulkFactor(1.15)" title="Tăng 15% toàn bộ">×1.15</button>
+                    <button type="button" class="btn btn-sm" style="padding: 4px 7px; font-size: 11.5px;" onclick="App.setQuickBulkFactor(1.2)" title="Tăng 20% toàn bộ">×1.2</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+      })()}
+
         ${(q.sections || []).map((sec, sIdx) => `
           <div style="border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 16px; background: #fff;">
             <div class="row-between" style="margin-bottom: 10px; background: var(--navy-light); padding: 8px 12px; border-radius: 6px;">
@@ -1180,7 +1265,7 @@ const App = (() => {
                 <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;margin-top:18px;cursor:pointer;">
                   <input type="checkbox" ${sec.showSubtotal ? 'checked' : ''}
                          onchange="App.updateSectionField(${sIdx}, 'showSubtotal', this.checked)">
-                  Hiện dòng Tổng nhóm
+                  Hiện Tổng nhóm
                 </label>
               </div>
               <div class="row">
@@ -1188,7 +1273,7 @@ const App = (() => {
                   + Thêm Hạng Mục Vào Nhóm Này
                 </button>
                 ${q.sections.length > 1 ? `
-                  <button class="btn btn-sm btn-danger" onclick="App.removeSection(${sIdx})">
+                  <button class="btn btn-sm btn-danger" onclick="App.removeSection(${sIdx})" title="Xóa nhóm này">
                     Xóa Nhóm
                   </button>
                 ` : ''}
@@ -1206,7 +1291,7 @@ const App = (() => {
                     <th style="width:65px" class="r">SL</th>
                     ${showCost ? '<th style="width:125px" class="r cost-col">Giá Cost (VND)</th>' : ''}
                     <th style="width:130px" class="r">Giá gốc cơ bản</th>
-                    <th style="width:130px" class="r">Chênh lệch (+/-)</th>
+                    <th style="width:130px" class="r" title="Hệ số nhân điều chỉnh cho từng hạng mục (Đơn giá = Giá gốc × Hệ số)">Chênh lệch (Hệ số ×)</th>
                     <th style="width:135px" class="r">Đơn giá sau ĐC</th>
                     <th style="width:135px" class="r">Thành tiền</th>
                     <th style="width:110px">Ghi chú</th>
@@ -1215,8 +1300,8 @@ const App = (() => {
                 </thead>
                 <tbody>
                   ${(sec.items || []).map((it, iIdx) => {
-                    const belowCost = showCost && it.cost_price && it.unit_price < it.cost_price;
-                    return `
+        const belowCost = showCost && it.cost_price && it.unit_price < it.cost_price;
+        return `
                       <tr>
                         <td class="c">
                           <input type="text" style="width:38px;text-align:center;padding:4px" value="${esc(it.stt)}"
@@ -1265,29 +1350,46 @@ const App = (() => {
                                  oninput="App.updateItemField(${sIdx}, ${iIdx}, 'unit', this.value)">
                         </td>
                         <td class="r">
-                          <input type="number" class="num" style="width:56px;padding:5px" min="1" value="${it.quantity || 1}"
-                                 oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'quantity', this.value)">
+                          <input type="number" id="input-qty-${sIdx}-${iIdx}" class="num" style="width:56px;padding:5px" min="1" value="${it.quantity || 1}"
+                                 onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
+                                 oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'quantity', this.value, this)"
+                                 onblur="App.handleItemPriceBlur(${sIdx}, ${iIdx}, 'quantity', this)">
                         </td>
                         ${showCost ? `
                           <td class="r cost-col">
-                            <input type="number" class="num" style="width:115px;padding:5px;background:#fffbeb" value="${it.cost_price || 0}"
-                                   oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'cost_price', this.value)">
+                            <input type="number" id="input-cost-${sIdx}-${iIdx}" class="num" style="width:115px;padding:5px;background:#fffbeb" min="0" value="${it.cost_price || 0}"
+                                   onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
+                                   oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'cost_price', this.value, this)"
+                                   onblur="App.handleItemPriceBlur(${sIdx}, ${iIdx}, 'cost_price', this)">
                           </td>
                         ` : ''}
                         <td class="r">
-                          <input type="number" class="num" style="width:120px;padding:5px" value="${it.base_price || 0}"
-                                 oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'base_price', this.value)">
+                          <input type="number" id="input-base-${sIdx}-${iIdx}" class="num" style="width:120px;padding:5px" min="0" value="${it.base_price || 0}"
+                                 onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
+                                 oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'base_price', this.value, this)"
+                                 onblur="App.handleItemPriceBlur(${sIdx}, ${iIdx}, 'base_price', this)">
                         </td>
                         <td class="r">
-                          <input type="number" class="num" style="width:120px;padding:5px;color:${(it.adjustment || 0) < 0 ? 'var(--red)' : (it.adjustment || 0) > 0 ? 'var(--green)' : 'inherit'};font-weight:600;"
-                                 value="${it.adjustment || 0}"
-                                 oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'adjustment', this.value)">
+                          <div style="display:flex;align-items:center;justify-content:flex-end;gap:3px;">
+                            <span style="font-size:12px;color:var(--muted);font-weight:700;">×</span>
+                            <input type="number" id="input-adj-${sIdx}-${iIdx}" class="num" min="0" step="0.01"
+                                   style="width:96px;padding:5px;color:${Number(it.adjustment ?? 1) < 1 ? 'var(--red)' : Number(it.adjustment ?? 1) > 1 ? 'var(--green)' : 'inherit'};font-weight:700;"
+                                   value="${it.adjustment ?? 1}"
+                                   onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
+                                   oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'adjustment', this.value, this)"
+                                   onblur="App.handleItemPriceBlur(${sIdx}, ${iIdx}, 'adjustment', this)">
+                          </div>
+                          <div id="adj-diff-hint-${sIdx}-${iIdx}" style="font-size:10.5px;color:${(it.unit_price - it.base_price) < 0 ? 'var(--red)' : (it.unit_price - it.base_price) > 0 ? 'var(--green)' : 'var(--muted)'};margin-top:2px;">
+                            ${(it.unit_price - it.base_price) === 0 ? 'Giá gốc (×1)' : `${(it.unit_price - it.base_price) > 0 ? '+' : ''}${fmtVnd(it.unit_price - it.base_price)} đ`}
+                          </div>
                         </td>
                         <td class="r">
-                          <input type="number" class="num" style="width:125px;padding:5px;font-weight:700;background:#f0fdf4;"
+                          <input type="number" id="input-unit-${sIdx}-${iIdx}" class="num" style="width:125px;padding:5px;font-weight:700;background:#f0fdf4;" min="0"
                                  value="${it.unit_price || 0}"
-                                 oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'unit_price', this.value)">
-                          ${belowCost ? `<div style="color:var(--red);font-size:10.5px;font-weight:700;">⚠️ Thấp hơn Cost!</div>` : ''}
+                                 onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
+                                 oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'unit_price', this.value, this)"
+                                 onblur="App.handleItemPriceBlur(${sIdx}, ${iIdx}, 'unit_price', this)">
+                          <div id="below-cost-${sIdx}-${iIdx}" style="color:var(--red);font-size:10.5px;font-weight:700;display:${belowCost ? 'block' : 'none'};">⚠️ Thấp hơn Cost!</div>
                         </td>
                         <td class="r" id="cell-total-${sIdx}-${iIdx}" style="font-weight:700;">
                           ${fmtVnd(it.total_price)}
@@ -1297,11 +1399,11 @@ const App = (() => {
                                  oninput="App.updateItemField(${sIdx}, ${iIdx}, 'remark', this.value)">
                         </td>
                         <td class="c">
-                          <button class="btn btn-sm btn-danger" onclick="App.removeItem(${sIdx}, ${iIdx})">🗑</button>
+                          <button class="btn btn-sm btn-danger" onclick="App.removeItem(${sIdx}, ${iIdx})" title="Xóa hạng mục này">🗑</button>
                         </td>
                       </tr>
                     `;
-                  }).join('')}
+      }).join('')}
                   ${sec.showSubtotal ? `
                     <tr class="sub-row">
                       <td colspan="${showCost ? 9 : 8}" class="r">${esc(sec.subtotalLabel || 'Cộng nhóm')}</td>
@@ -1560,7 +1662,7 @@ const App = (() => {
             quantity: 1,
             cost_price: defaultMgmtCost,
             base_price: defaultMgmtBase,
-            adjustment: 0,
+            adjustment: 1,
             unit_price: defaultMgmtBase,
             total_price: defaultMgmtBase,
             remark: ''
@@ -1608,7 +1710,7 @@ const App = (() => {
       quantity: 1,
       cost_price: eq.cost_price || 0,
       base_price: eq.base_price || 0,
-      adjustment: 0,
+      adjustment: 1,
       unit_price: eq.base_price || 0,
       total_price: eq.base_price || 0,
       remark: eq.origin_note || '',
@@ -1644,8 +1746,35 @@ const App = (() => {
 
   function removeSection(sIdx) {
     if (!state.activeQuote) return;
-    state.activeQuote.sections.splice(sIdx, 1);
-    renderFlow2();
+    const sec = state.activeQuote.sections?.[sIdx];
+    if (!sec) return;
+
+    if ((state.activeQuote.sections || []).length <= 1) {
+      toast('Báo giá phải có ít nhất 1 nhóm hạng mục, không thể xóa nhóm cuối cùng!');
+      return;
+    }
+
+    const secTitle = (sec.title || sec.code || `Nhóm #${sIdx + 1}`).trim();
+    const itemCount = (sec.items || []).length;
+
+    openConfirmModal({
+      title: '⚠️ Xác Nhận Xóa Nhóm Hạng Mục',
+      okText: '🗑 Xác nhận Xóa Nhóm',
+      isDanger: true,
+      messageHtml: `
+        Bạn có chắc chắn muốn xóa nhóm <strong>${esc(secTitle)}</strong> không?
+        ${itemCount > 0 ? `
+          <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;color:#991b1b;">
+            ⚠️ Nhóm này hiện đang có <strong>${itemCount}</strong> hạng mục. Tất cả hạng mục bên trong nhóm này sẽ bị xóa!
+          </div>
+        ` : ''}
+      `,
+      onConfirm: () => {
+        state.activeQuote.sections.splice(sIdx, 1);
+        renderFlow2();
+        toast(`Đã xóa nhóm "${secTitle}".`);
+      }
+    });
   }
 
   function addBlankItem(sIdx) {
@@ -1663,7 +1792,7 @@ const App = (() => {
       quantity: 1,
       cost_price: 0,
       base_price: 0,
-      adjustment: 0,
+      adjustment: 1,
       unit_price: 0,
       total_price: 0,
       remark: '',
@@ -1675,8 +1804,25 @@ const App = (() => {
   function removeItem(sIdx, iIdx) {
     const sec = state.activeQuote?.sections?.[sIdx];
     if (!sec) return;
-    sec.items.splice(iIdx, 1);
-    renderFlow2();
+    const it = sec.items?.[iIdx];
+    if (!it) return;
+
+    const itemName = (it.name_vi || it.name_jp || `Hạng mục #${iIdx + 1}`).trim();
+    const itemStt = it.stt ? `STT ${it.stt} - ` : '';
+
+    openConfirmModal({
+      title: '⚠️ Xác Nhận Xóa Hạng Mục',
+      okText: '🗑 Xác nhận Xóa Hạng Mục',
+      isDanger: true,
+      messageHtml: `
+        Bạn có chắc chắn muốn xóa hạng mục <strong>${esc(itemStt)}${esc(itemName)}</strong> khỏi bảng báo giá không?
+      `,
+      onConfirm: () => {
+        sec.items.splice(iIdx, 1);
+        renderFlow2();
+        toast(`Đã xóa hạng mục "${itemName}".`);
+      }
+    });
   }
 
   function updateItemField(sIdx, iIdx, field, val) {
@@ -1685,33 +1831,73 @@ const App = (() => {
     it[field] = val;
   }
 
-  function updateItemPriceCalc(sIdx, iIdx, field, rawVal) {
-    const it = state.activeQuote?.sections?.[sIdx]?.items?.[iIdx];
-    if (!it) return;
-    const numVal = Number(rawVal || 0);
+  function refreshFlow2PriceDom(excludeInputEl = null) {
+    const q = state.activeQuote;
+    if (!q) return;
+    recalcActiveQuoteTotals();
+    const showCost = state.permissions.canViewCost;
 
-    if (field === 'quantity') {
-      it.quantity = Math.max(1, numVal);
-    } else if (field === 'cost_price') {
-      it.cost_price = numVal;
-    } else if (field === 'base_price') {
-      it.base_price = numVal;
-      it.unit_price = it.base_price + Number(it.adjustment || 0);
-    } else if (field === 'adjustment') {
-      it.adjustment = numVal;
-      it.unit_price = Number(it.base_price || 0) + it.adjustment;
-    } else if (field === 'unit_price') {
-      it.unit_price = numVal;
-      it.adjustment = it.unit_price - Number(it.base_price || 0);
+    (q.sections || []).forEach((sec, sIdx) => {
+      (sec.items || []).forEach((it, iIdx) => {
+        const adjEl = document.getElementById(`input-adj-${sIdx}-${iIdx}`);
+        if (adjEl && adjEl !== excludeInputEl) {
+          adjEl.value = it.adjustment ?? 1;
+        }
+        if (adjEl) {
+          const f = Number(it.adjustment ?? 1);
+          adjEl.style.color = f < 1 ? 'var(--red)' : f > 1 ? 'var(--green)' : 'inherit';
+        }
+
+        const unitEl = document.getElementById(`input-unit-${sIdx}-${iIdx}`);
+        if (unitEl && unitEl !== excludeInputEl) {
+          unitEl.value = it.unit_price || 0;
+        }
+
+        const baseEl = document.getElementById(`input-base-${sIdx}-${iIdx}`);
+        if (baseEl && baseEl !== excludeInputEl) {
+          baseEl.value = it.base_price || 0;
+        }
+
+        const costEl = document.getElementById(`input-cost-${sIdx}-${iIdx}`);
+        if (costEl && costEl !== excludeInputEl) {
+          costEl.value = it.cost_price || 0;
+        }
+
+        const diffHint = document.getElementById(`adj-diff-hint-${sIdx}-${iIdx}`);
+        if (diffHint) {
+          const diffAmt = (it.unit_price || 0) - (it.base_price || 0);
+          diffHint.style.color = diffAmt < 0 ? 'var(--red)' : diffAmt > 0 ? 'var(--green)' : 'var(--muted)';
+          diffHint.textContent = diffAmt === 0 ? 'Giá gốc (×1)' : `${diffAmt > 0 ? '+' : ''}${fmtVnd(diffAmt)} đ`;
+        }
+
+        const belowCostEl = document.getElementById(`below-cost-${sIdx}-${iIdx}`);
+        if (belowCostEl) {
+          const isBelow = showCost && it.cost_price && it.unit_price < it.cost_price;
+          belowCostEl.style.display = isBelow ? 'block' : 'none';
+        }
+
+        const cellTotal = document.getElementById(`cell-total-${sIdx}-${iIdx}`);
+        if (cellTotal) cellTotal.textContent = fmtVnd(it.total_price);
+      });
+
+      const secSub = document.getElementById(`sec-subtotal-${sIdx}`);
+      if (secSub) secSub.textContent = fmtVnd(sec.subtotal);
+    });
+
+    const allItems = (q.sections || []).flatMap(s => s.items || []);
+    const firstFactor = allItems.length > 0 ? Number(allItems[0].adjustment ?? 1) : 1;
+    const isUniform = allItems.length > 0 && allItems.every(it => Math.abs(Number(it.adjustment ?? 1) - firstFactor) < 0.0001);
+
+    const badgeEl = document.getElementById('bulkFactorStatusBadge');
+    if (badgeEl) {
+      badgeEl.className = `status-pill ${isUniform ? 'status-approved' : 'status-pending_approval'}`;
+      badgeEl.textContent = isUniform ? `Đang đồng bộ tất cả: ×${firstFactor}` : 'Đang tùy chỉnh riêng từng hạng mục';
+    }
+    const bulkInput = document.getElementById('bulkFactorInput');
+    if (bulkInput && bulkInput !== excludeInputEl && isUniform) {
+      bulkInput.value = firstFactor;
     }
 
-    recalcActiveQuoteTotals();
-    const cellTotal = document.getElementById(`cell-total-${sIdx}-${iIdx}`);
-    if (cellTotal) cellTotal.textContent = fmtVnd(it.total_price);
-    const secSub = document.getElementById(`sec-subtotal-${sIdx}`);
-    if (secSub) secSub.textContent = fmtVnd(state.activeQuote.sections[sIdx].subtotal);
-
-    const q = state.activeQuote;
     const sumCost = document.getElementById('sumCostVal');
     if (sumCost) sumCost.innerHTML = `<strong>${fmtVnd(q.subtotal_cost)} VND</strong>`;
     const sumBase = document.getElementById('sumBaseVal');
@@ -1728,6 +1914,107 @@ const App = (() => {
     if (sumVat) sumVat.textContent = `${fmtVnd(q.vat_amount)} VND`;
     const sumPost = document.getElementById('sumPostTaxVal');
     if (sumPost) sumPost.textContent = `${fmtVnd(q.total_after_tax)} VND`;
+    const sumMargin = document.getElementById('sumMarginVal');
+    if (sumMargin) {
+      const margin = q.subtotal_before_tax - q.subtotal_cost;
+      const pct = q.subtotal_before_tax > 0 ? Math.round((margin / q.subtotal_before_tax) * 100) : 0;
+      sumMargin.innerHTML = `<strong>${margin >= 0 ? '+' : ''}${fmtVnd(margin)} VND</strong> (${pct}%)`;
+    }
+  }
+
+  function updateItemPriceCalc(sIdx, iIdx, field, rawVal, inputEl = null) {
+    const it = state.activeQuote?.sections?.[sIdx]?.items?.[iIdx];
+    if (!it) return;
+
+    const strVal = String(rawVal ?? '').trim();
+    if (strVal.includes('-') || Number(strVal) < 0) {
+      toast('⚠️ Giá và hệ số điều chỉnh không được để giá trị âm (-)!');
+      const fallback = field === 'quantity' ? 1 : (field === 'adjustment' ? 1 : 0);
+      if (inputEl) inputEl.value = fallback;
+      rawVal = String(fallback);
+    } else if (strVal === '') {
+      return;
+    }
+
+    const numVal = Math.max(0, Number(rawVal || 0));
+
+    if (field === 'quantity') {
+      it.quantity = Math.max(1, Math.round(numVal));
+    } else if (field === 'cost_price') {
+      it.cost_price = Math.max(0, Math.round(numVal));
+    } else if (field === 'base_price') {
+      it.base_price = Math.max(0, Math.round(numVal));
+      it._keepExactUnitPrice = false;
+      it.unit_price = Math.max(0, Math.round(it.base_price * Number(it.adjustment ?? 1)));
+    } else if (field === 'adjustment') {
+      it.adjustment = Math.max(0, numVal);
+      it._keepExactUnitPrice = false;
+      it.unit_price = Math.max(0, Math.round(Number(it.base_price || 0) * it.adjustment));
+    } else if (field === 'unit_price') {
+      it.unit_price = Math.max(0, Math.round(numVal));
+      it._keepExactUnitPrice = true;
+      const base = Number(it.base_price || 0);
+      it.adjustment = base > 0 ? Number((it.unit_price / base).toFixed(4)) : 1;
+    }
+
+    refreshFlow2PriceDom(inputEl);
+  }
+
+  function handleItemPriceBlur(sIdx, iIdx, field, inputEl) {
+    const it = state.activeQuote?.sections?.[sIdx]?.items?.[iIdx];
+    if (!it || !inputEl) return;
+    const strVal = String(inputEl.value ?? '').trim();
+    if (strVal === '' || Number(strVal) < 0 || Number.isNaN(Number(strVal))) {
+      const fallback = field === 'quantity' ? (it.quantity || 1) : (field === 'adjustment' ? (it.adjustment ?? 1) : (it[field] || 0));
+      inputEl.value = Math.max(0, fallback);
+      updateItemPriceCalc(sIdx, iIdx, field, inputEl.value, inputEl);
+    }
+  }
+
+  function applyBulkFactorToAll(rawVal, inputEl = null, showToastMsg = false) {
+    const q = state.activeQuote;
+    if (!q) return;
+
+    const strVal = String(rawVal ?? '').trim();
+    if (strVal.includes('-') || Number(strVal) < 0) {
+      toast('⚠️ Hệ số chênh lệch không được để giá trị âm (-)!');
+      if (inputEl) inputEl.value = 1;
+      rawVal = '1';
+    } else if (strVal === '') {
+      return;
+    }
+
+    const factor = Math.max(0, Number(rawVal));
+    if (Number.isNaN(factor)) return;
+
+    q.bulk_factor = factor;
+    (q.sections || []).forEach(sec => {
+      (sec.items || []).forEach(it => {
+        it.adjustment = factor;
+        it._keepExactUnitPrice = false;
+        it.unit_price = Math.max(0, Math.round(Number(it.base_price || 0) * factor));
+      });
+    });
+
+    refreshFlow2PriceDom(inputEl);
+    if (showToastMsg) {
+      toast(`Đã áp dụng hệ số chênh lệch ×${factor} cho tất cả hạng mục!`);
+    }
+  }
+
+  function handleBulkFactorBlur(inputEl) {
+    if (!inputEl || !state.activeQuote) return;
+    const strVal = String(inputEl.value ?? '').trim();
+    if (strVal === '' || Number(strVal) < 0 || Number.isNaN(Number(strVal))) {
+      inputEl.value = state.activeQuote.bulk_factor ?? 1;
+    }
+  }
+
+  function setQuickBulkFactor(factor) {
+    const safeFactor = Math.max(0, Number(factor || 1));
+    const bulkInput = document.getElementById('bulkFactorInput');
+    if (bulkInput) bulkInput.value = safeFactor;
+    applyBulkFactorToAll(safeFactor, bulkInput, true);
   }
 
   function addSubLine(sIdx, iIdx) {
@@ -1798,7 +2085,7 @@ const App = (() => {
                 name_jp: '排気ファン', name_vi: 'Quạt hút   #7 RFT-RB          (FRP)',
                 specs_text: '850 CMM   1500 Pa   45 Kw, 3phase ,380V,50Hz, 4P,IE3',
                 unit: 'Pc/Cái', quantity: 1, cost_price: 389100000, base_price: 778200000,
-                adjustment: 0, unit_price: 778200000, total_price: 778200000, remark: 'KYOWA JP', sub_lines: []
+                adjustment: 1, unit_price: 778200000, total_price: 778200000, remark: 'KYOWA JP', sub_lines: []
               }
             ]
           }
@@ -1857,7 +2144,7 @@ const App = (() => {
                 name_jp: '循環ポンプ', name_vi: 'Bơm tuần hoàn   65 VO              (PVC)',
                 specs_text: '385 L/min x 10 m x 2.2 kW',
                 unit: 'Pc/Cái', quantity: 1, cost_price: 68000000, base_price: 97180000,
-                adjustment: 0, unit_price: 97180000, total_price: 97180000, remark: '', sub_lines: []
+                adjustment: 1, unit_price: 97180000, total_price: 97180000, remark: '', sub_lines: []
               }
             ]
           },
@@ -1871,7 +2158,7 @@ const App = (() => {
                 id: 'item-2', stt: '1', item_type: 'service',
                 name_jp: '', name_vi: 'Phí vận chuyển trong nước',
                 specs_text: '', unit: 'Lot/Lần', quantity: 1, cost_price: 6000000, base_price: 8250000,
-                adjustment: 0, unit_price: 8250000, total_price: 8250000, remark: '', sub_lines: []
+                adjustment: 1, unit_price: 8250000, total_price: 8250000, remark: '', sub_lines: []
               }
             ]
           }
@@ -2460,11 +2747,11 @@ const App = (() => {
             </thead>
             <tbody>
               ${filtered.map(q => {
-                const canEditRow = canUserEditQuote(q);
-                const viewTooltip = q.status === 'approved'
-                  ? 'Báo giá Đã duyệt (Khóa chỉnh sửa - Nhấn để xem chi tiết)'
-                  : `Báo giá do @${esc(q.created_by)} tạo (Chế độ Chỉ xem)`;
-                return `
+      const canEditRow = canUserEditQuote(q);
+      const viewTooltip = q.status === 'approved'
+        ? 'Báo giá Đã duyệt (Khóa chỉnh sửa - Nhấn để xem chi tiết)'
+        : `Báo giá do @${esc(q.created_by)} tạo (Chế độ Chỉ xem)`;
+      return `
                 <tr>
                   <td>
                     <strong style="color:var(--navy)">${esc(q.quote_number)}</strong>
@@ -2481,12 +2768,12 @@ const App = (() => {
                   </td>
                   <td class="c" style="font-size:11.5px;line-height:1.3;padding:6px 6px;">
                     ${(() => {
-                      const raw = String(q.updated_at || q.created_at || '').trim().split(/[\sT]+/);
-                      const d = formatDateDMY(raw[0] || '');
-                      const t = (raw[1] || '').slice(0, 5);
-                      return `<div style="font-weight:600;color:#334155;">${esc(d)}</div>` +
-                             (t ? `<div style="font-size:11px;color:var(--muted);">${esc(t)}</div>` : '');
-                    })()}
+          const raw = String(q.updated_at || q.created_at || '').trim().split(/[\sT]+/);
+          const d = formatDateDMY(raw[0] || '');
+          const t = (raw[1] || '').slice(0, 5);
+          return `<div style="font-weight:600;color:#334155;">${esc(d)}</div>` +
+            (t ? `<div style="font-size:11px;color:var(--muted);">${esc(t)}</div>` : '');
+        })()}
                   </td>
                   ${showCost ? `<td class="r cost-col">${fmtVnd(q.subtotal_cost)}</td>` : ''}
                   <td class="r"><strong>${fmtVnd(q.subtotal_before_tax)}</strong></td>
@@ -2518,7 +2805,7 @@ const App = (() => {
                   </td>
                 </tr>
               `;
-              }).join('')}
+    }).join('')}
             </tbody>
           </table>
         </div>
@@ -2772,9 +3059,9 @@ const App = (() => {
                   <td class="r"><strong>${eq.base_price !== null ? fmtVnd(eq.base_price) : 'Chưa có giá'}</strong></td>
                   <td>
                     ${eq.is_default_included
-                      ? `<span class="tag-included">Đã gồm mặc định x${eq.default_qty}</span>`
-                      : `<span class="tag-optional">Cộng thêm theo dự án</span>`
-                    }
+        ? `<span class="tag-included">Đã gồm mặc định x${eq.default_qty}</span>`
+        : `<span class="tag-optional">Cộng thêm theo dự án</span>`
+      }
                   </td>
                   <td>${esc(eq.origin_note || '')}</td>
                   ${canManageCat ? `
@@ -3013,10 +3300,10 @@ const App = (() => {
             </thead>
             <tbody>
               ${users.map(u => {
-                const p = u.permissions || {};
-                const rClass = u.role === 'admin' ? 'admin' : u.role === 'manager' ? 'manager' : 'sale';
-                const isSelf = u.id === state.currentUser?.id;
-                return `
+      const p = u.permissions || {};
+      const rClass = u.role === 'admin' ? 'admin' : u.role === 'manager' ? 'manager' : 'sale';
+      const isSelf = u.id === state.currentUser?.id;
+      return `
                   <tr style="${!u.is_active ? 'opacity:0.65;background:#f8fafc;' : ''}">
                     <td>
                       <strong style="color:var(--navy)">${esc(u.username)}</strong>
@@ -3043,8 +3330,8 @@ const App = (() => {
                     <td class="c"><strong>${u.quotes_count || 0}</strong></td>
                     <td class="c">
                       ${u.is_active
-                        ? '<span class="status-pill status-approved">Hoạt động</span>'
-                        : '<span class="status-pill status-rejected">Đã khóa</span>'}
+          ? '<span class="status-pill status-approved">Hoạt động</span>'
+          : '<span class="status-pill status-rejected">Đã khóa</span>'}
                     </td>
                     <td style="font-size:12px;color:var(--muted)">
                       ${esc(u.last_login || 'Chưa ĐN')}
@@ -3069,7 +3356,7 @@ const App = (() => {
                     </td>
                   </tr>
                 `;
-              }).join('')}
+    }).join('')}
             </tbody>
           </table>
         </div>
@@ -3171,15 +3458,17 @@ const App = (() => {
       title_vi: 'Nhân viên Kinh doanh',
       title_jp: '担当者',
       is_active: 1,
-      permissions: { ...(state.rolePresets?.sale || {
-        canViewCost: false,
-        canApproveQuote: false,
-        canManageCatalog: false,
-        canManageUsers: false,
-        canViewAllQuotes: true,
-        canDeleteQuote: false,
-        canExportExcel: false
-      }) }
+      permissions: {
+        ...(state.rolePresets?.sale || {
+          canViewCost: false,
+          canApproveQuote: false,
+          canManageCatalog: false,
+          canManageUsers: false,
+          canViewAllQuotes: true,
+          canDeleteQuote: false,
+          canExportExcel: false
+        })
+      }
     };
 
     renderUserPermModalContent();
@@ -3467,6 +3756,10 @@ const App = (() => {
     removeItem,
     updateItemField,
     updateItemPriceCalc,
+    handleItemPriceBlur,
+    applyBulkFactorToAll,
+    handleBulkFactorBlur,
+    setQuickBulkFactor,
     addSubLine,
     updateSubLine,
     removeSubLine,
