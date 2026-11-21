@@ -144,11 +144,15 @@ function formatQuoteRow(row, includeCost) {
       }))
     }));
   }
+  const mgmtFeePct = (terms && terms.mgmt_fee_percent !== undefined)
+    ? Number(terms.mgmt_fee_percent)
+    : (row.mgmt_fee_percent !== undefined ? Number(row.mgmt_fee_percent) : 5);
   return {
     ...row,
+    mgmt_fee_percent: mgmtFeePct,
     subtotal_cost: includeCost ? row.subtotal_cost : null,
     sections,
-    terms
+    terms: { ...terms, mgmt_fee_percent: mgmtFeePct }
   };
 }
 
@@ -511,7 +515,10 @@ const server = http.createServer(async (req, res) => {
           Number(body.vat_amount || 0),
           Number(body.total_after_tax || 0),
           JSON.stringify(body.sections || []),
-          JSON.stringify(body.terms || {}),
+          JSON.stringify({
+            ...(body.terms || {}),
+            mgmt_fee_percent: Number(body.mgmt_fee_percent ?? body.terms?.mgmt_fee_percent ?? 5)
+          }),
           body.internal_notes || '',
           currentUser.username
         );
@@ -620,7 +627,10 @@ const server = http.createServer(async (req, res) => {
           Number(body.vat_amount ?? existing.vat_amount),
           Number(body.total_after_tax ?? existing.total_after_tax),
           JSON.stringify(body.sections || JSON.parse(existing.sections_json)),
-          JSON.stringify(body.terms || JSON.parse(existing.terms_json)),
+          JSON.stringify({
+            ...(body.terms || JSON.parse(existing.terms_json)),
+            mgmt_fee_percent: Number(body.mgmt_fee_percent ?? body.terms?.mgmt_fee_percent ?? JSON.parse(existing.terms_json || '{}').mgmt_fee_percent ?? 5)
+          }),
           body.internal_notes ?? existing.internal_notes,
           id
         );

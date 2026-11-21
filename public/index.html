@@ -336,25 +336,31 @@
     <!-- NAVIGATION TABS -->
     <nav class="nav-bar">
       <button class="nav-tab active" id="tabBtn-flow1" onclick="App.showTab('flow1')">
-        <span>📝 1. Báo Giá Cơ Bản</span>
+        <span class="tab-label-full">📝 1. Báo Giá Cơ Bản</span>
+        <span class="tab-label-short">📝 1. BG Cơ Bản</span>
       </button>
       <button class="nav-tab" id="tabBtn-flow2" onclick="App.showTab('flow2')">
-        <span>📝 2. Báo Giá Chi Tiết</span>
+        <span class="tab-label-full">📝 2. Báo Giá Chi Tiết</span>
+        <span class="tab-label-short">📝 2. BG Chi Tiết</span>
         <span class="nav-badge" id="activeQuoteBadge">Đang mở</span>
       </button>
       <button class="nav-tab" id="tabBtn-print" onclick="App.showTab('print')">
-        <span>🖨️ 3. Bản In / Xuất PDF (A4)</span>
+        <span class="tab-label-full">🖨️ 3. Bản In / Xuất PDF (A4)</span>
+        <span class="tab-label-short">🖨️ 3. Bản In PDF</span>
       </button>
       <button class="nav-tab" id="tabBtn-quotes" onclick="App.showTab('quotes')">
-        <span>📁 4. Hồ Sơ &amp; Phê Duyệt</span>
+        <span class="tab-label-full">📁 4. Hồ Sơ &amp; Phê Duyệt</span>
+        <span class="tab-label-short">📁 4. Hồ Sơ BG</span>
         <span class="nav-badge" id="quotesCountBadge">0</span>
       </button>
       <button class="nav-tab" id="tabBtn-catalog" onclick="App.showTab('catalog')">
-        <span>🗂️ 5. Danh Mục &amp; Excel</span>
+        <span class="tab-label-full">🗂️ 5. Danh Mục &amp; Excel</span>
+        <span class="tab-label-short">🗂️ 5. Danh Mục</span>
         <span class="nav-badge" id="modelsCountBadge">64</span>
       </button>
       <button class="nav-tab" id="tabBtn-users" onclick="App.showTab('users')">
-        <span>👥 6. Tài Khoản &amp; Phân Quyền</span>
+        <span class="tab-label-full">👥 6. Tài Khoản &amp; Phân Quyền</span>
+        <span class="tab-label-short">👥 6. Tài Khoản</span>
         <span class="nav-badge" id="usersCountBadge">4</span>
       </button>
     </nav>

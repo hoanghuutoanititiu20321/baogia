@@ -407,7 +407,7 @@ const App = (() => {
     container.innerHTML = `
       <div class="card">
         <div class="card-header">
-          <h2 class="card-title">Luồng 1 – Tra Cứu Cấu Hình & Báo Giá Cơ Bản</h2>
+          <h2 class="card-title">Tra Cứu Cấu Hình & Báo Giá Cơ Bản</h2>
           <div class="row">
             <button class="btn btn-primary" onclick="App.startDetailedFromF1('tower_bundle')">
               Chuyển sang Báo Giá Chi Tiết (Gộp 1 Set – Mẫu Taikisha) →
@@ -483,8 +483,8 @@ const App = (() => {
             <table class="data-table">
               <thead>
                 <tr>
-                  <th style="width: 24%;">Hạng mục cấu hình</th>
-                  <th>Thông số kỹ thuật & Chi tiết tiêu chuẩn</th>
+                  <th style="width: 24%; min-width: 170px;">Hạng mục cấu hình</th>
+                  <th style="min-width: 240px;">Thông số kỹ thuật & Chi tiết tiêu chuẩn</th>
                   ${showCost ? '<th class="r cost-col" style="width: 16%;">Giá Cost nội bộ (VND)</th>' : ''}
                   <th class="r" style="width: 18%;">Giá báo cơ bản (VND)</th>
                 </tr>
@@ -528,12 +528,12 @@ const App = (() => {
           <table class="data-table">
             <thead>
               <tr>
-                <th>Model</th>
+                <th style="min-width: 90px;">Model</th>
                 <th class="r">Lưu lượng (m³/min)</th>
                 <th class="r">Hệ tháp</th>
-                <th>Quạt (Motor / Pa)</th>
+                <th style="min-width: 140px;">Quạt (Motor / Pa)</th>
                 <th class="r">Giá Quạt</th>
-                <th>Dòng Bơm</th>
+                <th style="min-width: 130px;">Dòng Bơm</th>
                 <th class="r">Giá Bơm</th>
                 <th class="r">Tủ điện</th>
                 <th class="r">Hệ sắt Stage</th>
@@ -568,9 +568,23 @@ const App = (() => {
   }
 
   function setF1Product(prod) {
+    const prevModel = getSelectedF1Model();
+    const prevFlow = prevModel ? Number(prevModel.flow_rate) : null;
+    const prevCode = state.f1.modelCode;
+
     state.f1.productLine = prod;
-    const first = state.models.find(m => m.product_line === prod);
-    if (first) state.f1.modelCode = String(first.model_code);
+    const modelsInNewProd = state.models.filter(m => m.product_line === prod);
+
+    // Ưu tiên giữ lại model có cùng Lưu lượng (flow_rate) đã chọn trước đó nếu dòng sản phẩm mới có mức lưu lượng này
+    const sameFlowModel = (prevFlow !== null && !Number.isNaN(prevFlow))
+      ? modelsInNewProd.find(m => Number(m.flow_rate) === prevFlow)
+      : null;
+    const sameCodeModel = modelsInNewProd.find(m => String(m.model_code) === String(prevCode));
+    const targetModel = sameFlowModel || sameCodeModel || modelsInNewProd[0];
+
+    if (targetModel) {
+      state.f1.modelCode = String(targetModel.model_code);
+    }
     renderFlow1();
   }
 
@@ -740,7 +754,7 @@ const App = (() => {
             {
               id: 'item-b1', stt: '1', item_type: 'service_mgmt',
               name_jp: '現場管理・設計・試運転費', name_vi: 'Thiết kế, quản lí, vận hành',
-              specs_text: 'Khoản 5% tách từ cấu hình cơ bản', unit: 'Lot/Lần', quantity: 1,
+              specs_text: '', unit: 'Lot/Lần', quantity: 1,
               cost_price: m.mgmt_cost, base_price: m.mgmt_base, adjustment: 1,
               unit_price: m.mgmt_base, total_price: m.mgmt_base, remark: ''
             },
@@ -773,6 +787,7 @@ const App = (() => {
       flow_type: 'detailed',
       layout_template: mode === 'tower_bundle' ? 'tower_bundle' : 'itemized',
       mgmt_fee_mode: 'separate_to_b',
+      mgmt_fee_percent: 5,
       status: 'draft',
       customer_name: state.f1.customerName || 'CÔNG TY KHÁCH HÀNG',
       customer_address: '',
@@ -813,7 +828,8 @@ const App = (() => {
         bank_account_name_vi: 'KYOWA KAKO VIETNAM CO.,LTD',
         bank_account_no: '3680022466',
         bank_name_vi: 'BIDV Bank - Tan Binh Branch, HCMC',
-        total_label_before_tax: 'Total (A) + (B) - Before TAX'
+        total_label_before_tax: 'Total (A) + (B) - Before TAX',
+        mgmt_fee_percent: 5
       },
       internal_notes: `Khởi tạo từ cấu hình cơ bản ${m.product_line} - Model ${m.model_code} (Tổng giá cơ bản gốc: ${fmtVnd(m.total_base)} VND).`
     };
@@ -827,6 +843,55 @@ const App = (() => {
   // ===========================================================================
   // TAB 2: FLOW 2 – LẬP & ĐIỀU CHỈNH BÁO GIÁ CHI TIẾT
   // ===========================================================================
+  function isMgmtFeeItem(it) {
+    if (!it) return false;
+    if (it.item_type === 'service_mgmt') return true;
+    const vi = (it.name_vi || '').toLowerCase();
+    const jp = (it.name_jp || '').trim();
+    return (
+      jp === '現場管理・設計・試運転費' ||
+      vi.includes('thiết kế, quản l') ||
+      vi.includes('chi phí quản lý, thiết kế')
+    );
+  }
+
+  function computeMgmtFeeAmounts(q, customPct) {
+    if (!q) return { pct: 5, prodCostSum: 0, prodBaseSum: 0, cost: 0, base: 0 };
+    const rawPct = customPct !== undefined
+      ? customPct
+      : (q.mgmt_fee_percent ?? q.terms?.mgmt_fee_percent ?? 5);
+    const pct = Math.min(100, Math.max(0, Number(rawPct ?? 5)));
+
+    let prodCostSum = 0;
+    let prodBaseSum = 0;
+    const primarySec = (q.sections && q.sections[0]) ? q.sections[0] : null;
+    if (primarySec && Array.isArray(primarySec.items)) {
+      primarySec.items.forEach(it => {
+        if (!isMgmtFeeItem(it) && it.item_type !== 'service') {
+          const qty = Math.max(1, Number(it.quantity || 1));
+          prodBaseSum += Math.round(Number(it.base_price || 0) * qty);
+          if (it.cost_price !== null && it.cost_price !== undefined) {
+            prodCostSum += Math.round(Number(it.cost_price || 0) * qty);
+          }
+        }
+      });
+    }
+
+    if (prodBaseSum <= 0 && q.selected_product_line && q.selected_model_code) {
+      const refModel = state.models.find(
+        m => m.product_line === q.selected_product_line && String(m.model_code) === String(q.selected_model_code)
+      );
+      if (refModel) {
+        prodCostSum = (refModel.tower_cost || 0) + (refModel.fan_cost || 0) + (refModel.pump_cost || 0) + (refModel.panel_cost || 0) + (refModel.stage_cost || 0);
+        prodBaseSum = (refModel.tower_base || 0) + (refModel.fan_base || 0) + (refModel.pump_base || 0) + (refModel.panel_base || 0) + (refModel.stage_base || 0);
+      }
+    }
+
+    const base = Math.round(prodBaseSum * (pct / 100));
+    const cost = prodCostSum > 0 ? Math.round(prodCostSum * (pct / 100)) : Math.round(base / 2);
+    return { pct, prodCostSum, prodBaseSum, cost, base };
+  }
+
   function normalizeItemPricing(it) {
     if (!it) return;
     it.quantity = Math.max(1, Number(it.quantity || 1));
@@ -1102,14 +1167,44 @@ const App = (() => {
                   <option value="KCN Hòa Bình, Huyện Thủ Thừa. Tỉnh Long An" ${q.kkvn_address.includes('Long An') ? 'selected' : ''}>KCN Hòa Bình, Huyện Thủ Thừa. Tỉnh Long An</option>
                 </select>
               </label>
-              <label class="field">
-                承認者 Người duyệt
-                <input type="text" value="${esc(q.approver_name)}" oninput="App.updateQField('approver_name', this.value)">
-              </label>
-              <label class="field">
-                SĐT Người duyệt
-                <input type="text" value="${esc(q.approver_phone)}" oninput="App.updateQField('approver_phone', this.value)">
-              </label>
+              ${(() => {
+        const approverUsers = (state.users || []).filter(u =>
+          Number(u.is_active ?? 1) !== 0 &&
+          (u.role === 'admin' || u.role === 'manager' || u.permissions?.canApproveQuote)
+        );
+        const curName = String(q.approver_name || '').trim().toLowerCase();
+        const matchedApprover = !q._customApprover && approverUsers.find(
+          u => String(u.full_name || '').trim().toLowerCase() === curName
+        );
+        const showCustomInput = Boolean(q._customApprover || (!matchedApprover && curName));
+
+        return `
+                  <label class="field">
+                    承認者 Người duyệt (Chọn Admin / Giám đốc / Quản lý)
+                    <select id="approverUserSelect" onchange="App.onSelectApproverUser(this.value)">
+                      ${approverUsers.map(u => {
+          const roleNote = u.role === 'admin' ? 'Admin / Giám Đốc' : (u.role === 'manager' ? 'Quản lý KD' : 'Có quyền duyệt');
+          return `
+                          <option value="${u.id}" ${matchedApprover && matchedApprover.id === u.id ? 'selected' : ''}>
+                            ${esc(u.full_name)} (${roleNote})${u.phone ? ` · ${esc(u.phone)}` : ''}
+                          </option>
+                        `;
+        }).join('')}
+                      <option value="__custom__" ${showCustomInput ? 'selected' : ''}>✍️ Tùy chỉnh tên người duyệt khác...</option>
+                    </select>
+                    <input type="text" id="approverNameCustomInput"
+                           style="margin-top:4px; display:${showCustomInput ? 'block' : 'none'};"
+                           value="${esc(q.approver_name || '')}"
+                           placeholder="Nhập họ tên người duyệt..."
+                           oninput="App.updateQField('approver_name', this.value)">
+                  </label>
+                  <label class="field">
+                    SĐT Người duyệt
+                    <input type="text" id="approverPhoneInput" value="${esc(q.approver_phone || '')}"
+                           oninput="App.updateQField('approver_phone', this.value)">
+                  </label>
+                `;
+      })()}
               <label class="field">
                 担当者 Người đảm trách (Sale/PIC)
                 <input type="text" value="${esc(q.pic_name)}" oninput="App.updateQField('pic_name', this.value)">
@@ -1141,25 +1236,59 @@ const App = (() => {
         </div>
 
         <div class="grid-3" style="margin-bottom: 14px;">
-          <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
-            <strong style="color:var(--navy); display:block; margin-bottom:6px;">Quy tắc "Chi phí quản lý, thiết kế" (5%)</strong>
-            <p style="font-size:12px; color:var(--muted); margin:0 0 8px;">
-              Tránh tính trùng khoản Quản lý & Thiết kế đã có trong cấu hình cơ bản khi thêm mục B. Khác:
-            </p>
-            <select style="width:100%" onchange="App.handleMgmtFeeModeChange(this.value)">
-              <option value="separate_to_b" ${q.mgmt_fee_mode === 'separate_to_b' ? 'selected' : ''}>1. Thay thế / Tách sang mục B. Khác (Chuẩn mẫu Taikisha - Không cộng trùng)</option>
-              <option value="included_in_a" ${q.mgmt_fee_mode === 'included_in_a' ? 'selected' : ''}>2. Gộp chung trong mục Sản xuất A (Không tách mục B)</option>
-              <option value="additional" ${q.mgmt_fee_mode === 'additional' ? 'selected' : ''}>3. Cộng bổ sung riêng (Giữ nguyên giá cơ bản + Thêm phí thiết kế mới)</option>
-            </select>
-          </div>
+          ${(() => {
+        const mgmtInfo = computeMgmtFeeAmounts(q);
+        const mgmtPct = mgmtInfo.pct;
+        return `
+              <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
+                <div class="row-between" style="margin-bottom:6px; gap:6px;">
+                  <strong style="color:var(--navy);">Quy tắc "Chi phí quản lý, thiết kế" (<span id="mgmtFeePctTitle">${mgmtPct}</span>%)</strong>
+                  <div style="display:flex; align-items:center; gap:4px; background:#fff; padding:3px 8px; border-radius:6px; border:1px solid #93c5fd;">
+                    <span style="font-size:12px; font-weight:700; color:var(--navy);">Mức phí:</span>
+                    <input type="number" id="mgmtFeePercentInput" class="num" min="0" max="100" step="0.1"
+                           style="width:62px; padding:3px 6px; font-weight:700; color:var(--navy); border:1px solid #cbd5e1;"
+                           value="${mgmtPct}"
+                           title="Mặc định 5%, có thể điều chỉnh tỷ lệ % tùy ý"
+                           onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
+                           oninput="App.onMgmtFeePercentInput(this.value, this)"
+                           onblur="App.onMgmtFeePercentBlur(this)">
+                    <span style="font-size:12.5px; font-weight:700; color:var(--navy);">%</span>
+                  </div>
+                </div>
+                <div class="row-between" style="margin-bottom:8px; gap:6px;">
+                  <div class="row" style="gap:4px;">
+                    ${[0, 3, 5, 8, 10].map(pct => `
+                      <button type="button" class="btn btn-sm ${Number(mgmtPct) === pct ? 'btn-navy' : ''}"
+                              id="mgmtPctBtn-${pct}"
+                              style="padding:2px 7px; font-size:11.5px;"
+                              onclick="App.setQuickMgmtFeePercent(${pct})">
+                        ${pct === 5 ? '5%' : `${pct}%`}
+                      </button>
+                    `).join('')}
+                  </div>
+                  <span id="mgmtFeeCalcHint" style="font-size:11.5px; font-weight:700; color:var(--green);" title="Giá gốc cơ bản của khoản Chi phí quản lý, thiết kế tương ứng với tỷ lệ % đang chọn">
+                    = ${fmtVnd(mgmtInfo.base)} đ
+                  </span>
+                </div>
+                <p style="font-size:12px; color:var(--muted); margin:0 0 8px;">
+                  Tránh tính trùng khoản Quản lý & Thiết kế đã có trong cấu hình cơ bản khi thêm mục B. Khác:
+                </p>
+                <select style="width:100%" onchange="App.handleMgmtFeeModeChange(this.value)">
+                  <option value="separate_to_b" ${q.mgmt_fee_mode === 'separate_to_b' ? 'selected' : ''}>1. Thay thế / Tách sang mục B. Khác (Chuẩn mẫu Taikisha - Không cộng trùng)</option>
+                  <option value="included_in_a" ${q.mgmt_fee_mode === 'included_in_a' ? 'selected' : ''}>2. Gộp chung trong mục Sản xuất A (Không tách mục B)</option>
+                  <option value="additional" ${q.mgmt_fee_mode === 'additional' ? 'selected' : ''}>3. Cộng bổ sung riêng (Giữ nguyên giá cơ bản + Thêm phí thiết kế mới)</option>
+                </select>
+              </div>
+            `;
+      })()}
 
           <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
             <strong style="color:var(--navy); display:block; margin-bottom:6px;">Thêm Thiết bị đo & Option vào Báo giá</strong>
             <p style="font-size:12px; color:var(--muted); margin:0 0 8px;">
               4 thiết bị mặc định đã đánh dấu <span class="tag-included">Đã gồm</span> để tránh cộng trùng:
             </p>
-            <div class="row">
-              <select id="quickAddInstSelect" style="flex:1">
+            <div class="quick-add-row">
+              <select id="quickAddInstSelect">
                 ${instrumentsAndOptions.map(eq => `
                   <option value="${eq.id}">
                     ${eq.is_default_included ? '[ĐÃ GỒM MẶC ĐỊNH] ' : '[+ OPTION] '}
@@ -1175,8 +1304,8 @@ const App = (() => {
 
           <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
             <strong style="color:var(--navy); display:block; margin-bottom:6px;">Thêm nhanh Quạt / Bơm lẻ & Dịch vụ</strong>
-            <div class="row" style="margin-bottom:6px;">
-              <select id="quickAddFanPumpSelect" style="flex:1">
+            <div class="quick-add-row" style="margin-bottom:6px;">
+              <select id="quickAddFanPumpSelect">
                 ${standaloneFansPumps.map(eq => `
                   <option value="${eq.id}">[${eq.category.toUpperCase()}] ${esc(eq.name_vi)} — ${fmtVnd(eq.base_price)} đ</option>
                 `).join('')}
@@ -1185,8 +1314,8 @@ const App = (() => {
                 + Thêm TB
               </button>
             </div>
-            <div class="row">
-              <select id="quickAddServiceSelect" style="flex:1">
+            <div class="quick-add-row">
+              <select id="quickAddServiceSelect">
                 ${serviceCatalog.map(eq => `
                   <option value="${eq.id}">[DỊCH VỤ] ${esc(eq.name_vi)} — ${fmtVnd(eq.base_price)} đ</option>
                 `).join('')}
@@ -1227,7 +1356,7 @@ const App = (() => {
                 </div>
 
                 <div class="row" style="align-items: center; gap: 8px; flex-wrap: wrap;">
-                  <div style="display: flex; align-items: center; gap: 6px; background: #fff; padding: 5px 10px; border-radius: 6px; border: 1px solid #93c5fd;">
+                  <div class="bulk-factor-box">
                     <span style="font-size: 12.5px; font-weight: 700; color: var(--navy);">Hệ số tất cả: ×</span>
                     <input type="number" id="bulkFactorInput" class="num" min="0" step="0.01"
                            style="width: 82px; padding: 4px 6px; font-weight: 700; color: var(--navy); border: 1px solid #cbd5e1;"
@@ -1255,19 +1384,19 @@ const App = (() => {
 
         ${(q.sections || []).map((sec, sIdx) => `
           <div style="border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 16px; background: #fff;">
-            <div class="row-between" style="margin-bottom: 10px; background: var(--navy-light); padding: 8px 12px; border-radius: 6px;">
-              <div class="row" style="align-items:center; flex:1;">
-                <label class="field" style="flex:1; max-width:360px;">
+            <div class="row-between sec-header-bar">
+              <div class="row sec-header-fields">
+                <label class="field sec-title-field">
                   Tiêu đề Nhóm / Phân khu (Để trống nếu không chia nhóm như mẫu SMC)
                   <input type="text" value="${esc(sec.title)}" placeholder="VD: A./製造 Sản xuất hoặc I. PH1 - Tháp SCR 1-1"
                          oninput="App.updateSectionField(${sIdx}, 'title', this.value)">
                 </label>
-                <label class="field" style="width:170px;">
+                <label class="field sec-sublabel-field">
                   Nhãn dòng Tổng nhóm
                   <input type="text" value="${esc(sec.subtotalLabel || '')}" placeholder="VD: TOTAL (A)"
                          oninput="App.updateSectionField(${sIdx}, 'subtotalLabel', this.value)">
                 </label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;margin-top:18px;cursor:pointer;">
+                <label class="sec-subcheck-label">
                   <input type="checkbox" ${sec.showSubtotal ? 'checked' : ''}
                          onchange="App.updateSectionField(${sIdx}, 'showSubtotal', this.checked)">
                   Hiện Tổng nhóm
@@ -1290,8 +1419,8 @@ const App = (() => {
                 <thead>
                   <tr>
                     <th style="width:45px" class="c">STT</th>
-                    <th style="width:120px">Tên tiếng Nhật</th>
-                    <th>Tên hạng mục (Tiếng Việt) & Thông số / Cấu hình đi kèm</th>
+                    <th style="width:120px; min-width:115px;">Tên tiếng Nhật</th>
+                    <th style="min-width:290px;">Tên hạng mục (Tiếng Việt) & Thông số / Cấu hình đi kèm</th>
                     <th style="width:78px" class="c">Đơn vị</th>
                     <th style="width:65px" class="r">SL</th>
                     ${showCost ? '<th style="width:125px" class="r cost-col">Giá Cost (VND)</th>' : ''}
@@ -1331,8 +1460,8 @@ const App = (() => {
                               </button>
                             </div>
                             ${(it.sub_lines || []).map((sl, slIdx) => `
-                              <div class="row" style="gap:4px;margin-bottom:3px;align-items:center;">
-                                <input type="text" style="flex:1;padding:3px 6px;font-size:12px;background:#f8fafc"
+                              <div class="subline-row">
+                                <input type="text" style="flex:1;min-width:140px;padding:3px 6px;font-size:12px;background:#f8fafc"
                                        value="${esc(sl.text)}" placeholder="Nội dung dòng con (VD: + pH計Đo pH)"
                                        oninput="App.updateSubLine(${sIdx}, ${iIdx}, ${slIdx}, 'text', this.value)">
                                 <input type="text" style="width:72px;padding:3px 6px;font-size:12px;background:#f8fafc"
@@ -1572,6 +1701,39 @@ const App = (() => {
     updateActiveQuoteBadge();
   }
 
+  function onSelectApproverUser(val) {
+    const q = state.activeQuote;
+    if (!q) return;
+
+    const customInput = document.getElementById('approverNameCustomInput');
+    const phoneInput = document.getElementById('approverPhoneInput');
+
+    if (val === '__custom__') {
+      q._customApprover = true;
+      if (customInput) {
+        customInput.style.display = 'block';
+        customInput.focus();
+      }
+      return;
+    }
+
+    const user = (state.users || []).find(u => String(u.id) === String(val));
+    if (!user) return;
+
+    q._customApprover = false;
+    q.approver_name = user.full_name || '';
+    q.approver_phone = user.phone || '';
+
+    if (customInput) {
+      customInput.value = q.approver_name;
+      customInput.style.display = 'none';
+    }
+    if (phoneInput) {
+      phoneInput.value = q.approver_phone;
+    }
+    toast(`Đã chọn Người duyệt: ${q.approver_name}${q.approver_phone ? ` (SĐT: ${q.approver_phone})` : ''}`);
+  }
+
   function updateTermField(field, value) {
     if (!state.activeQuote) return;
     state.activeQuote.terms = state.activeQuote.terms || {};
@@ -1648,34 +1810,178 @@ const App = (() => {
     toast('Đã áp dụng mẫu điều kiện thương mại!');
   }
 
+  function applyMgmtFeePercentToQuote(pct, inputEl = null, showToastMsg = false) {
+    const q = state.activeQuote;
+    if (!q) return;
+
+    const cleanPct = Math.min(100, Math.max(0, Number(pct || 0)));
+    q.mgmt_fee_percent = cleanPct;
+    q.terms = q.terms || {};
+    q.terms.mgmt_fee_percent = cleanPct;
+
+    const mgmtInfo = computeMgmtFeeAmounts(q, cleanPct);
+    let foundAny = false;
+
+    (q.sections || []).forEach(sec => {
+      (sec.items || []).forEach(it => {
+        if (isMgmtFeeItem(it)) {
+          foundAny = true;
+          it.item_type = 'service_mgmt';
+          it.cost_price = mgmtInfo.cost;
+          it.base_price = mgmtInfo.base;
+          it._keepExactUnitPrice = false;
+          it.unit_price = Math.max(0, Math.round(mgmtInfo.base * Number(it.adjustment ?? 1)));
+          it.total_price = Math.round(it.unit_price * Math.max(1, Number(it.quantity || 1)));
+          if (it.specs_text && /Khoản\s+[\d.]+\s*%/i.test(it.specs_text)) {
+            it.specs_text = it.specs_text.replace(/Khoản\s+[\d.]+\s*%/i, `Khoản ${cleanPct}%`);
+          }
+          if (it.name_vi && /\([\d.]+\s*%\)/.test(it.name_vi)) {
+            it.name_vi = it.name_vi.replace(/\([\d.]+\s*%\)/, `(${cleanPct}%)`);
+          }
+        }
+      });
+    });
+
+    if (!foundAny && showToastMsg && cleanPct > 0 && (q.sections || []).length > 0) {
+      const targetSec = q.mgmt_fee_mode === 'included_in_a'
+        ? q.sections[0]
+        : (q.sections.length > 1 ? q.sections[q.sections.length - 1] : q.sections[0]);
+      targetSec.items = targetSec.items || [];
+      targetSec.items.unshift({
+        id: 'mgmt-' + Date.now(),
+        stt: '1',
+        item_type: 'service_mgmt',
+        name_jp: '現場管理・設計・試運転費',
+        name_vi: 'Thiết kế, quản lí, vận hành',
+        specs_text: `Khoản ${cleanPct}% chi phí quản lý, thiết kế`,
+        unit: 'Lot/Lần',
+        quantity: 1,
+        cost_price: mgmtInfo.cost,
+        base_price: mgmtInfo.base,
+        adjustment: 1,
+        unit_price: mgmtInfo.base,
+        total_price: mgmtInfo.base,
+        remark: ''
+      });
+      targetSec.items.forEach((it, idx) => { it.stt = String(idx + 1); });
+      renderFlow2();
+      toast(`Đã thêm và áp dụng Chi phí quản lý, thiết kế (${cleanPct}% = ${fmtVnd(mgmtInfo.base)} đ)!`);
+      return;
+    }
+
+    const titleEl = document.getElementById('mgmtFeePctTitle');
+    if (titleEl) titleEl.textContent = cleanPct;
+    const hintEl = document.getElementById('mgmtFeeCalcHint');
+    if (hintEl) hintEl.textContent = `= ${fmtVnd(mgmtInfo.base)} đ`;
+    [0, 3, 5, 8, 10].forEach(p => {
+      const btn = document.getElementById(`mgmtPctBtn-${p}`);
+      if (btn) btn.classList.toggle('btn-navy', Number(cleanPct) === p);
+    });
+
+    refreshFlow2PriceDom(inputEl);
+    if (showToastMsg) {
+      toast(`Đã cập nhật tỷ lệ Chi phí quản lý, thiết kế: ${cleanPct}% (${fmtVnd(mgmtInfo.base)} đ)!`);
+    }
+  }
+
+  function onMgmtFeePercentInput(rawVal, inputEl = null) {
+    const q = state.activeQuote;
+    if (!q) return;
+    const strVal = String(rawVal ?? '').trim();
+    if (strVal.includes('-') || Number(strVal) < 0) {
+      toast('⚠️ Tỷ lệ phần trăm không được để giá trị âm (-)!');
+      if (inputEl) inputEl.value = 0;
+      applyMgmtFeePercentToQuote(0, inputEl, false);
+      return;
+    }
+    if (strVal === '') return;
+    const numVal = Math.min(100, Math.max(0, Number(strVal)));
+    if (Number.isNaN(numVal)) return;
+    applyMgmtFeePercentToQuote(numVal, inputEl, false);
+  }
+
+  function onMgmtFeePercentBlur(inputEl) {
+    if (!inputEl || !state.activeQuote) return;
+    const strVal = String(inputEl.value ?? '').trim();
+    if (strVal === '' || Number(strVal) < 0 || Number.isNaN(Number(strVal))) {
+      const fallback = state.activeQuote.mgmt_fee_percent ?? state.activeQuote.terms?.mgmt_fee_percent ?? 5;
+      inputEl.value = fallback;
+      applyMgmtFeePercentToQuote(fallback, inputEl, false);
+    }
+  }
+
+  function setQuickMgmtFeePercent(pct) {
+    const cleanPct = Math.min(100, Math.max(0, Number(pct ?? 5)));
+    const inp = document.getElementById('mgmtFeePercentInput');
+    if (inp) inp.value = cleanPct;
+    applyMgmtFeePercentToQuote(cleanPct, inp, true);
+  }
+
   function handleMgmtFeeModeChange(mode) {
     const q = state.activeQuote;
     if (!q) return;
     q.mgmt_fee_mode = mode;
 
-    const refModel = state.models.find(
-      m => m.product_line === q.selected_product_line && String(m.model_code) === String(q.selected_model_code)
-    );
-    const defaultMgmtCost = refModel?.mgmt_cost || 21333050;
-    const defaultMgmtBase = refModel?.mgmt_base || 42666100;
+    const mgmtInfo = computeMgmtFeeAmounts(q);
+    const defaultMgmtCost = mgmtInfo.cost;
+    const defaultMgmtBase = mgmtInfo.base;
+    const mgmtPct = mgmtInfo.pct;
 
     if (mode === 'separate_to_b') {
-      toast('Chế độ: Tách khoản Quản lý & Thiết kế xuống mục B. Khác (Không cộng trùng ở mục A).');
+      if (q.sections && q.sections.length > 1 && q.sections[0]) {
+        q.sections[0].items = (q.sections[0].items || []).filter(it => !isMgmtFeeItem(it));
+      }
+      let secB = (q.sections || []).find((s, idx) => idx > 0 || (s.code || '').startsWith('B'));
+      if (!secB && q.sections) {
+        secB = {
+          id: 'sec-b',
+          code: 'B./他Khác',
+          title: 'B./他Khác',
+          showSubtotal: true,
+          subtotalLabel: 'TOTAL (B)',
+          items: []
+        };
+        q.sections.push(secB);
+      }
+      if (secB) {
+        const hasInB = (secB.items || []).some(it => isMgmtFeeItem(it));
+        if (!hasInB) {
+          secB.items = secB.items || [];
+          secB.items.unshift({
+            id: 'mgmt-' + Date.now(),
+            stt: '1',
+            item_type: 'service_mgmt',
+            name_jp: '現場管理・設計・試運転費',
+            name_vi: 'Thiết kế, quản lí, vận hành',
+            specs_text: ``,
+            unit: 'Lot/Lần',
+            quantity: 1,
+            cost_price: defaultMgmtCost,
+            base_price: defaultMgmtBase,
+            adjustment: 1,
+            unit_price: defaultMgmtBase,
+            total_price: defaultMgmtBase,
+            remark: ''
+          });
+          secB.items.forEach((it, idx) => { it.stt = String(idx + 1); });
+        }
+      }
+      toast(`Chế độ: Tách khoản Quản lý & Thiết kế (${mgmtPct}%) xuống mục B. Khác (Không cộng trùng ở mục A).`);
     } else if (mode === 'included_in_a') {
-      q.sections.forEach(sec => {
-        if (sec.code.startsWith('B')) {
-          sec.items = (sec.items || []).filter(it => it.item_type !== 'service_mgmt');
+      q.sections.forEach((sec, idx) => {
+        if (idx > 0 || (sec.code || '').startsWith('B')) {
+          sec.items = (sec.items || []).filter(it => !isMgmtFeeItem(it));
         }
       });
       if (q.sections[0]) {
-        const hasInA = q.sections[0].items.some(it => it.item_type === 'service_mgmt');
+        const hasInA = q.sections[0].items.some(it => isMgmtFeeItem(it));
         if (!hasInA) {
           q.sections[0].items.push({
             id: 'mgmt-' + Date.now(),
             stt: String(q.sections[0].items.length + 1),
             item_type: 'service_mgmt',
             name_jp: '現場管理・設計・試運転費',
-            name_vi: 'Chi phí quản lý, thiết kế (Trong cấu hình cơ bản)',
+            name_vi: `Chi phí quản lý, thiết kế (${mgmtPct}%)`,
             specs_text: '',
             unit: 'Lot/Lần',
             quantity: 1,
@@ -1688,9 +1994,9 @@ const App = (() => {
           });
         }
       }
-      toast('Đã gộp khoản Quản lý & Thiết kế vào mục A và bỏ khỏi mục B!');
+      toast(`Đã gộp khoản Quản lý & Thiết kế (${mgmtPct}%) vào mục A và bỏ khỏi mục B!`);
     } else if (mode === 'additional') {
-      toast('Chế độ: Cộng bổ sung thêm khoản Quản lý / Thiết kế riêng ngoài giá cơ bản.');
+      toast(`Chế độ: Cộng bổ sung thêm khoản Quản lý / Thiết kế (${mgmtPct}%) riêng ngoài giá cơ bản.`);
     }
     renderFlow2();
   }
@@ -1944,6 +2250,11 @@ const App = (() => {
       const margin = q.subtotal_before_tax - q.subtotal_cost;
       const pct = q.subtotal_before_tax > 0 ? Math.round((margin / q.subtotal_before_tax) * 100) : 0;
       sumMargin.innerHTML = `<strong>${margin >= 0 ? '+' : ''}${fmtVnd(margin)} VND</strong> (${pct}%)`;
+    }
+    const mgmtHint = document.getElementById('mgmtFeeCalcHint');
+    if (mgmtHint) {
+      const mgmtInfo = computeMgmtFeeAmounts(q);
+      mgmtHint.textContent = `= ${fmtVnd(mgmtInfo.base)} đ`;
     }
   }
 
@@ -2571,6 +2882,12 @@ const App = (() => {
         ? '/assets/stamp_longan.png'
         : null;
 
+    const isMobileViewport = window.innerWidth <= 840;
+    const fitMobile = state.fitMobileA4 !== false;
+    const mobileZoom = (isMobileViewport && fitMobile)
+      ? Math.max(0.38, Math.min(1, (window.innerWidth - 28) / 794)).toFixed(3)
+      : 1;
+
     container.innerHTML = `
       <div class="card no-print">
         <div class="row-between">
@@ -2588,6 +2905,11 @@ const App = (() => {
                 </option>
               `).join('')}
             </select>
+            ${isMobileViewport ? `
+              <button class="btn" onclick="App.toggleMobileA4Fit()">
+                ${fitMobile ? '🔍 Phóng to 100%' : '📱 Thu vừa màn hình ĐT'}
+              </button>
+            ` : ''}
             <button class="btn" onclick="App.showTab('flow2')">
               ✏️ Quay lại Chỉnh sửa
             </button>
@@ -2603,8 +2925,8 @@ const App = (() => {
         </div>
       </div>
 
-      <div class="a4-preview-wrapper">
-        <div class="kkvn-sheet">
+      <div class="a4-preview-wrapper ${isMobileViewport && fitMobile ? 'mobile-fit-mode' : ''}">
+        <div class="kkvn-sheet" style="${mobileZoom < 1 ? `zoom: ${mobileZoom};` : ''}">
           <div class="kkvn-top-bar">
             <div class="kkvn-logo-block">
               <img src="/assets/kkvn_logo.jpg" alt="KKVN" class="kkvn-logo-img">
@@ -2832,7 +3154,7 @@ const App = (() => {
           </div>
           <div class="row">
             <input type="text" placeholder="Tìm số BG, khách hàng, dự án..." value="${esc(state.quoteSearch)}"
-                   oninput="App.setQuoteFilter('search', this.value)" style="min-width:240px;">
+                   oninput="App.setQuoteFilter('search', this.value)" style="flex:1 1 200px;">
             <select onchange="App.setQuoteFilter('status', this.value)">
               <option value="ALL" ${state.quoteStatusFilter === 'ALL' ? 'selected' : ''}>Tất cả trạng thái (${state.quotations.length})</option>
               <option value="draft" ${state.quoteStatusFilter === 'draft' ? 'selected' : ''}>Bản nháp</option>
@@ -2851,10 +3173,10 @@ const App = (() => {
           <table class="data-table">
             <thead>
               <tr>
-                <th style="width:105px;">Số Báo Giá</th>
-                <th style="width:88px;">Ngày BG</th>
-                <th>Khách Hàng & Dự Án</th>
-                <th style="width:165px;">Người Tạo & Đảm Trách</th>
+                <th style="width:105px; min-width:95px;">Số Báo Giá</th>
+                <th style="width:88px; min-width:82px;">Ngày BG</th>
+                <th style="min-width:210px;">Khách Hàng & Dự Án</th>
+                <th style="width:165px; min-width:145px;">Người Tạo & Đảm Trách</th>
                 <th class="c" style="width:86px;">Cập Nhật</th>
                 ${showCost ? '<th class="r cost-col" style="width:125px;">Tổng Giá Cost</th>' : ''}
                 <th class="r" style="width:125px;">Tổng Trước Thuế</th>
@@ -3162,14 +3484,14 @@ const App = (() => {
             <thead>
               <tr>
                 <th>Nhóm</th>
-                <th>Tên tiếng Nhật</th>
-                <th>Tên Thiết Bị / Dịch Vụ (Tiếng Việt)</th>
-                <th>Thông số kỹ thuật</th>
+                <th style="min-width:110px;">Tên tiếng Nhật</th>
+                <th style="min-width:210px;">Tên Thiết Bị / Dịch Vụ (Tiếng Việt)</th>
+                <th style="min-width:170px;">Thông số kỹ thuật</th>
                 <th class="c">Đơn vị</th>
                 ${showCost ? '<th class="r cost-col">Giá Cost (VND)</th>' : ''}
                 <th class="r">Đơn giá cơ bản (VND)</th>
-                <th>Quy tắc gói cơ bản</th>
-                <th>Ghi chú</th>
+                <th style="min-width:135px;">Quy tắc gói cơ bản</th>
+                <th style="min-width:95px;">Ghi chú</th>
                 ${canManageCat ? '<th class="c">Xóa</th>' : ''}
               </tr>
             </thead>
@@ -3414,13 +3736,13 @@ const App = (() => {
             <thead>
               <tr>
                 <th>Tài khoản (Username)</th>
-                <th>Họ và Tên / Liên hệ</th>
-                <th>Chức danh trên Báo giá</th>
-                <th>Vai trò chính</th>
-                <th>Các quyền được cấp (Chi tiết)</th>
+                <th style="min-width:170px;">Họ và Tên / Liên hệ</th>
+                <th style="min-width:140px;">Chức danh trên Báo giá</th>
+                <th style="min-width:115px;">Vai trò chính</th>
+                <th style="min-width:240px;">Các quyền được cấp (Chi tiết)</th>
                 <th class="c">Số BG</th>
                 <th class="c">Trạng thái</th>
-                <th>Đăng nhập cuối</th>
+                <th style="min-width:115px;">Đăng nhập cuối</th>
                 <th class="c">Thao tác</th>
               </tr>
             </thead>
@@ -3848,6 +4170,17 @@ const App = (() => {
     }
   });
 
+  function toggleMobileA4Fit() {
+    state.fitMobileA4 = state.fitMobileA4 === false ? true : false;
+    renderPrintView();
+  }
+
+  window.addEventListener('resize', () => {
+    if (state.activeTab === 'print') {
+      renderPrintView();
+    }
+  });
+
   document.addEventListener('DOMContentLoaded', init);
 
   return {
@@ -3861,6 +4194,7 @@ const App = (() => {
     submitChangePassword,
     closeConfirmModal,
     executeConfirmedAction,
+    toggleMobileA4Fit,
     showTab,
     setF1Product,
     setF1Model,
@@ -3869,11 +4203,15 @@ const App = (() => {
     selectRecommendedModel,
     startDetailedFromF1,
     updateQField,
+    onSelectApproverUser,
     updateTermField,
     updatePaymentLines,
     updateBankCombined,
     applyTermsPreset,
     handleMgmtFeeModeChange,
+    onMgmtFeePercentInput,
+    onMgmtFeePercentBlur,
+    setQuickMgmtFeePercent,
     quickAddEquipment,
     updateSectionField,
     addSection,
