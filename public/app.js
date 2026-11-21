@@ -44,7 +44,26 @@ const App = (() => {
     quoteStatusFilter: 'ALL',
 
     // Editing user modal state
-    editingUser: null
+    editingUser: null,
+
+    // Print / Export template & center watermark preferences
+    printTemplate: (() => {
+      try { return JSON.parse(localStorage.getItem('kkvn_print_prefs') || '{}').printTemplate || 'classic'; } catch { return 'classic'; }
+    })(),
+    printWatermark: (() => {
+      try {
+        const p = JSON.parse(localStorage.getItem('kkvn_print_prefs') || '{}');
+        return p.printWatermark !== undefined ? Boolean(p.printWatermark) : true;
+      } catch { return true; }
+    })(),
+    printWatermarkOpacity: (() => {
+      try { return Number(JSON.parse(localStorage.getItem('kkvn_print_prefs') || '{}').printWatermarkOpacity || 0.10); } catch { return 0.10; }
+    })(),
+    printWatermarkSize: (() => {
+      try { return Number(JSON.parse(localStorage.getItem('kkvn_print_prefs') || '{}').printWatermarkSize || 490); } catch { return 490; }
+    })(),
+    printPickerOpen: false,
+    watermarkDataUrlCache: {}
   };
 
   const PERM_DEFINITIONS = [
@@ -2803,6 +2822,195 @@ const App = (() => {
     return `<span class="q-red">${esc(qNum)}</span>`;
   }
 
+  const PRINT_TEMPLATES = [
+    { id: 'classic', name: 'Mẫu 1 (KKVN)', desc: 'Mẫu chuẩn truyền thống KKVN', swatches: ['#b4c6e7', '#d9d9d9'] },
+    { id: 'executive', name: 'Mẫu 2', desc: 'Cao Cấp Navy & Xanh Kyowa', swatches: ['#1f3864', '#4e954d'] },
+    { id: 'kyowa-green', name: 'Mẫu 3', desc: 'Xanh Thương Hiệu Kyowa', swatches: ['#2e7d32', '#81c784'] },
+    { id: 'japanese-jis', name: 'Mẫu 4', desc: 'Chuẩn Tập Đoàn Nhật (JIS)', swatches: ['#111827', '#991b1b'] },
+    { id: 'luxury-gold', name: 'Mẫu 5', desc: 'VIP Navy & Vàng Kim', swatches: ['#0f172a', '#c59b27'] },
+    { id: 'crimson-fdi', name: 'Mẫu 6', desc: 'Đỏ Đô Tập Đoàn FDI', swatches: ['#991b1b', '#1f2937'] },
+    { id: 'tech-blueprint', name: 'Mẫu 7', desc: 'Kỹ Thuật Công Nghiệp (CAD)', swatches: ['#0c4a6e', '#0284c7'] },
+    { id: 'minimal-mono', name: 'Mẫu 8', desc: 'Tối Giản In Laser Đen Trắng', swatches: ['#111827', '#e5e7eb'] },
+    { id: 'emerald-teal', name: 'Mẫu 9', desc: 'Xanh Ngọc Lục Bảo', swatches: ['#0f766e', '#5eead4'] },
+    { id: 'royal-indigo', name: 'Mẫu 10', desc: 'Xanh Chàm Châu Âu', swatches: ['#312e81', '#818cf8'] },
+    { id: 'bronze-heritage', name: 'Mẫu 11', desc: 'Nâu Đồng Cổ Điển', swatches: ['#78350f', '#fde68a'] },
+    { id: 'slate-sidebar', name: 'Mẫu 12', desc: 'Cột Trái Hiện Đại', swatches: ['#0f172a', '#059669'] }
+  ];
+
+  function savePrintPrefs() {
+    try {
+      localStorage.setItem('kkvn_print_prefs', JSON.stringify({
+        printTemplate: state.printTemplate,
+        printWatermark: state.printWatermark,
+        printWatermarkOpacity: state.printWatermarkOpacity,
+        printWatermarkSize: state.printWatermarkSize
+      }));
+    } catch {}
+    if (state.activeQuote) {
+      state.activeQuote.terms = state.activeQuote.terms || {};
+      state.activeQuote.terms.print_template = state.printTemplate;
+      state.activeQuote.terms.print_watermark = state.printWatermark;
+      state.activeQuote.terms.print_watermark_opacity = state.printWatermarkOpacity;
+      state.activeQuote.terms.print_watermark_size = state.printWatermarkSize;
+    }
+  }
+
+  function setPrintTemplate(tplId) {
+    state.printTemplate = tplId;
+    savePrintPrefs();
+    renderPrintView();
+  }
+
+  function togglePrintPicker() {
+    state.printPickerOpen = !state.printPickerOpen;
+    renderPrintView();
+  }
+
+  function togglePrintWatermark(checked) {
+    state.printWatermark = Boolean(checked);
+    savePrintPrefs();
+    renderPrintView();
+  }
+
+  function setPrintWatermarkOpacity(val) {
+    state.printWatermarkOpacity = Number(val || 0.10);
+    savePrintPrefs();
+    renderPrintView();
+  }
+
+  function setPrintWatermarkSize(val) {
+    state.printWatermarkSize = Number(val || 490);
+    savePrintPrefs();
+    renderPrintView();
+  }
+
+  async function getTransparentWatermarkDataUrl(opacity = 0.10) {
+    const key = String(Number(opacity).toFixed(3));
+    if (state.watermarkDataUrlCache[key]) return state.watermarkDataUrlCache[key];
+
+    const rawDataUrl = await fetchImageAsDataUrl('/assets/kkvn_logo.jpg');
+    if (!rawDataUrl) return null;
+
+    return await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || img.width || 300;
+          canvas.height = img.naturalHeight || img.height || 140;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const d = imgData.data;
+          const alphaFactor = Math.max(0.02, Math.min(1, Number(opacity)));
+          for (let i = 0; i < d.length; i += 4) {
+            const r = d[i];
+            const g = d[i + 1];
+            const b = d[i + 2];
+            // Biến nền trắng của logo JPG thành trong suốt hoàn toàn để không tạo mảng trắng khi làm watermark
+            if (r > 235 && g > 235 && b > 235) {
+              d[i + 3] = 0;
+            } else {
+              d[i + 3] = Math.round(d[i + 3] * alphaFactor);
+            }
+          }
+          ctx.putImageData(imgData, 0, 0);
+          const pngUrl = canvas.toDataURL('image/png');
+          state.watermarkDataUrlCache[key] = pngUrl;
+          resolve(pngUrl);
+        } catch {
+          resolve(rawDataUrl);
+        }
+      };
+      img.onerror = () => resolve(rawDataUrl);
+      img.src = rawDataUrl;
+    });
+  }
+
+  function buildFooterNotesAndSignHtml(q, t, stampImgSrc) {
+    return `
+      <div class="kkvn-footer-grid">
+        <div class="kkvn-notes-col">
+          <div class="kkvn-notes-title">記 Ghi chú</div>
+
+          <div class="kkvn-note-item">
+            <span>①</span>
+            <div>
+              <div>Thời hạn báo giá &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: &nbsp; <strong>${esc(t.validity_days ?? 30)}</strong> &nbsp; ngày</div>
+              <div>見積の有効期限 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: &nbsp; <strong>${esc(t.validity_days ?? 30)}</strong> &nbsp; 日間</div>
+            </div>
+          </div>
+
+          <div class="kkvn-note-item">
+            <span>②</span>
+            <div>
+              <div>Địa điểm giao hàng &nbsp;: &nbsp; ${esc(t.delivery_place_vi || 'Tại chân công trình')}</div>
+              <div>Delivery先 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: &nbsp; ${esc(t.delivery_place_jp || '工事現場で引き渡し')}</div>
+            </div>
+          </div>
+
+          <div class="kkvn-note-item">
+            <span>③</span>
+            <div>
+              <div>Thời gian giao hàng : &nbsp; <strong>${esc(t.delivery_days ?? q.lead_time_days ?? 180)}</strong> Ngày (Tính từ khi nhận cọc)</div>
+              <div>納期日.月.年 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: &nbsp; <strong>${esc(t.delivery_days ?? q.lead_time_days ?? 180)}</strong> 日間 (頭金を受けてから)</div>
+            </div>
+          </div>
+
+          <div class="kkvn-note-item">
+            <span>④</span>
+            <div>
+              <div>Thời hạn bảo hành &nbsp;&nbsp;: &nbsp; <strong>${esc(t.warranty_months ?? 12)}</strong> Tháng (Tính từ khi giao hàng)</div>
+              <div>保証期間は設置後: &nbsp; <strong>${esc(t.warranty_months ?? 12)}</strong> か月（設置後から計算）</div>
+            </div>
+          </div>
+
+          <div class="kkvn-note-item">
+            <span>⑤</span>
+            <div class="${t.note_5_highlight ? 'kkvn-note-red' : ''}" style="white-space:pre-line;">${esc(t.note_5_vi || '')}</div>
+          </div>
+
+          <div class="kkvn-note-item">
+            <span>⑥</span>
+            <div>
+              <div>Phương pháp thanh toán 支払方法 :</div>
+              ${(t.payment_lines || []).map(pl => `<div style="padding-left:6px;">${esc(pl)}</div>`).join('')}
+            </div>
+          </div>
+
+          <div class="kkvn-note-item">
+            <span>⑦</span>
+            <div>
+              <div>Thông tin tài khoản &nbsp; 記銀行口座</div>
+              <div style="padding-left:8px;">
+                Tên tài khoản 口座名義 : &nbsp; ${esc(t.bank_account_name_vi || 'KYOWA KAKO VIETNAM CO.,LTD')}<br>
+                Số tài khoản 口座番号 &nbsp;: &nbsp; <strong>${esc(t.bank_account_no || '3680022466')}</strong><br>
+                Ngân hàng 銀行名 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: &nbsp; ${esc(t.bank_name_vi || 'BIDV Bank - Tan Binh Branch, HCMC')}
+              </div>
+            </div>
+          </div>
+
+          <div class="kkvn-approval-box">
+            <div style="display:flex;justify-content:space-between;">
+              <span>見積承認 Duyệt giá báo</span>
+              <span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; / &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="kkvn-sign-col">
+          <div style="font-weight:700;margin-bottom:4px;">営業部 Phòng Kinh Doanh</div>
+          <div class="kkvn-stamp-wrap">
+            ${stampImgSrc ? `<img src="${stampImgSrc}" alt="Stamp" class="kkvn-stamp-img">` : '<div style="height:120px"></div>'}
+            ${q.stamp_type === 'tayninh' || q.stamp_type === 'none' ? `
+              <div style="font-weight:700;font-size:10.5pt;margin-top:4px;">${esc(q.signer_name || 'NGUYỄN BẢO TRƯỜNG')}</div>
+            ` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderPrintView() {
     const container = document.getElementById('view-print');
     if (!container) return;
@@ -2814,6 +3022,10 @@ const App = (() => {
     recalcActiveQuoteTotals();
     const q = state.activeQuote;
     const t = q.terms || {};
+    const tpl = state.printTemplate || 'executive';
+    const showWatermark = state.printWatermark !== false;
+    const wmOpacity = Number(state.printWatermarkOpacity || 0.10);
+    const wmSize = Number(state.printWatermarkSize || 490);
 
     let tableRowsHtml = '';
     (q.sections || []).forEach(sec => {
@@ -2841,15 +3053,12 @@ const App = (() => {
           tableRowsHtml += `
             <tr>
               <td></td>
-              <td style="padding-left:18px;">${esc(it.specs_text)}</td>
+              <td style="padding-left:18px;font-size:9pt;color:#334155;">${esc(it.specs_text)}</td>
               <td></td>
               <td></td>
               <td></td>
               <td></td>
               <td></td>
-            </tr>
-            <tr>
-              <td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td>
             </tr>
           `;
         }
@@ -2859,17 +3068,17 @@ const App = (() => {
             tableRowsHtml += `
               <tr>
                 <td></td>
-                <td style="padding-left:${sl.text.startsWith('   +') ? '26px' : '8px'};">
-                  <div style="display:flex;justify-content:space-between;">
+                <td style="padding-left:${sl.text.startsWith('   +') ? '26px' : '10px'};font-size:9pt;">
+                  <div style="display:flex;justify-content:space-between;gap:8px;">
                     <span>${esc(sl.text.trim())}</span>
-                    ${sl.right_text ? `<span>${esc(sl.right_text)}</span>` : ''}
+                    ${sl.right_text ? `<span style="white-space:nowrap;">${esc(sl.right_text)}</span>` : ''}
                   </div>
                 </td>
                 <td></td>
                 <td></td>
                 <td></td>
                 <td></td>
-                <td style="text-align:center;font-weight:700;">${esc(sl.remark || '')}</td>
+                <td style="text-align:center;font-weight:700;font-size:8.5pt;">${esc(sl.remark || '')}</td>
               </tr>
             `;
           });
@@ -2898,66 +3107,784 @@ const App = (() => {
       `;
     }
 
+    const itemsTableHtml = `
+      <table class="kkvn-items-table">
+        <thead>
+          <tr>
+            <th style="width:40px">番号<br>STT</th>
+            <th>明細<br>Chi Tiết</th>
+            <th style="width:58px">単位<br>Đơn Vị</th>
+            <th style="width:36px">数<br>SL</th>
+            <th style="width:98px">単価<br>Đơn giá</th>
+            <th style="width:106px">金額(VND)<br>Thành Tiền</th>
+            <th style="width:92px">備考<br>Ghi Chú</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRowsHtml}
+        </tbody>
+      </table>
+    `;
+
     const stampImgSrc = q.stamp_type === 'tayninh'
       ? '/assets/stamp_tayninh.png'
       : q.stamp_type === 'longan'
         ? '/assets/stamp_longan.png'
         : null;
 
-    const isMobileViewport = window.innerWidth <= 840;
-    const fitMobile = state.fitMobileA4 !== false;
-    const mobileZoom = (isMobileViewport && fitMobile)
-      ? Math.max(0.38, Math.min(1, (window.innerWidth - 28) / 794)).toFixed(3)
-      : 1;
+    const footerHtml = buildFooterNotesAndSignHtml(q, t, stampImgSrc);
 
-    container.innerHTML = `
-      <div class="card no-print">
-        <div class="row-between">
-          <div>
-            <h2 class="card-title" style="margin:0">Xem Trước Bản In / Xuất PDF Chuẩn Biểu Mẫu Kyowa Kako Việt Nam</h2>
-            <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted)">
-              Định dạng khổ A4.
-            </p>
+    const watermarkLayerHtml = showWatermark ? `
+      <div class="kkvn-watermark-layer" aria-hidden="true">
+        <img id="sheetWatermarkImg"
+             src="${state.watermarkDataUrlCache[String(wmOpacity.toFixed(3))] || '/assets/kkvn_logo.jpg'}"
+             alt=""
+             class="kkvn-watermark-img"
+             style="width:${wmSize}px; ${state.watermarkDataUrlCache[String(wmOpacity.toFixed(3))] ? 'opacity:1;' : `opacity:${wmOpacity}; mix-blend-mode:multiply;`}">
+      </div>
+    ` : '';
+
+    let sheetBodyHtml = '';
+
+    if (tpl === 'executive') {
+      sheetBodyHtml = `
+        <div class="exec-top-accent"></div>
+        <div class="kkvn-sheet-content">
+          <div class="exec-header-grid">
+            <div class="exec-brand-col">
+              <img src="/assets/kkvn_logo.jpg" alt="KKVN" class="exec-logo-img">
+              <div class="exec-company-sub">KYOWA KAKO VIET NAM CO., LTD</div>
+            </div>
+            <div class="exec-title-col">
+              <h1 class="exec-doc-title">${esc(q.doc_title || '御見積 BÁO GIÁ')}</h1>
+              <div class="exec-doc-sub">QUOTATION · PROPOSAL</div>
+            </div>
+            <div class="exec-meta-box">
+              <div><span style="color:#64748b;">Số / No.:</span> <strong style="color:#1f3864;">${esc(q.quote_number)}</strong></div>
+              <div><span style="color:#64748b;">Ngày / Date:</span> <strong style="color:#b91c1c;">${esc(formatDateDMY(q.quote_date))}</strong></div>
+              <div><span style="color:#64748b;">Rev:</span> <strong>${String(q.revision || 1).padStart(2, '0')}</strong></div>
+            </div>
           </div>
-          <div class="row">
-            <select onchange="App.loadQuotationById(this.value)">
-              ${state.quotations.map(sq => `
-                <option value="${sq.id}" ${sq.id === q.id ? 'selected' : ''}>
-                  [${esc(sq.quote_number)}] ${esc(sq.customer_name)}
-                </option>
-              `).join('')}
-            </select>
-            ${isMobileViewport ? `
-              <button class="btn" onclick="App.toggleMobileA4Fit()">
-                ${fitMobile ? '🔍 Phóng to 100%' : '📱 Thu vừa màn hình ĐT'}
-              </button>
-            ` : ''}
-            <button class="btn" onclick="App.showTab('flow2')">
-              ✏️ Quay lại Chỉnh sửa
-            </button>
-            ${canUserMarkSent(q) ? `
-              <button class="btn" style="background:#2563eb;color:#fff;border-color:#1d4ed8;" onclick="App.changeQuoteStatus(${q.id}, 'sent')">
-                📨 Đánh dấu Đã gửi KH
-              </button>
-            ` : ''}
-            <button class="btn" id="btnExportPdfDirect" style="" onclick="App.exportActiveQuoteToPdf(this)" title="Tải trực tiếp file PDF (.pdf) chuẩn khổ A4 về máy (Không mở hộp thoại máy in)">
-              📄 Xuất PDF (.pdf)
-            </button>
-            <button class="btn" style="" onclick="App.exportActiveQuoteToWord()" title="Tải về file Word (.doc) chuẩn bố cục A4 KKVN để chỉnh sửa trong Microsoft Word">
-              📝 Xuất Word (.doc)
-            </button>
-            <button class="btn" style="" onclick="App.exportActiveQuoteToExcel()" title="Tải về file Excel (.xlsx) chuẩn bảng tính báo giá KKVN">
-              📊 Xuất Excel (.xlsx)
-            </button>
-            <button class="btn btn-navy" onclick="window.print()" title="Mở hộp thoại kết nối máy in để in giấy trực tiếp">
-              🖨️ In
-            </button>
+
+          <div class="exec-party-grid">
+            <div class="exec-party-card cust">
+              <div class="exec-party-kicker">Kính gửi / Customer</div>
+              <div class="exec-party-name">${esc(q.customer_name)}</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.customer_address || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">電話番号 Điện thoại</span><span class="kkvn-info-val">${esc(q.customer_phone || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">連絡先 Liên hệ</span><span class="kkvn-info-val">${esc(q.customer_contact || '—')}</span></div>
+            </div>
+            <div class="exec-party-card comp">
+              <div class="exec-party-kicker">Đơn vị báo giá / Supplier</div>
+              <div class="exec-party-name">KYOWA KAKO VIET NAM CO., LTD</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.kkvn_address || '')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">承認者 Người duyệt</span><span class="kkvn-info-val bold-italic">${esc(q.approver_name)} ${esc(q.approver_phone)}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">担当者 Đảm trách</span><span class="kkvn-info-val bold-italic">${esc(q.pic_name)} ${esc(q.pic_phone)}</span></div>
+            </div>
+          </div>
+
+          <div class="exec-project-strip">
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#475569;">プロジェクト Dự Án :</span><strong style="color:#1f3864;">${esc(q.project_name || '')}</strong></div>
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#475569;">設置先 Nơi lắp đặt :</span><span>${esc(q.install_location || '')}</span></div>
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#475569;">納期 Thời gian đặt hàng :</span><span><strong>${esc(q.lead_time_days || 180)}</strong> &nbsp; 日間 ${esc(q.lead_time_note || 'Ngày (kể từ ngày nhận cọc)')}</span></div>
+          </div>
+
+          ${itemsTableHtml}
+
+          <div class="exec-summary-wrap">
+            <table class="exec-summary-table">
+              ${anySecSubtotal ? `
+                <tr>
+                  <td><strong>${esc(t.total_label_before_tax || 'Total (A) + (B) - Before TAX')}</strong></td>
+                  <td style="text-align:right;font-weight:700;">${fmtPdfNum(q.subtotal_before_tax)} VND</td>
+                </tr>
+              ` : ''}
+              <tr>
+                <td><strong>TAX VAT (${Number(q.vat_percent || 0)}%)</strong></td>
+                <td style="text-align:right;font-weight:700;">${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) + ' VND' : '-'}</td>
+              </tr>
+              <tr class="grand-row">
+                <td>TỔNG CỘNG (After TAX)</td>
+                <td style="text-align:right;">${fmtPdfNum(q.total_after_tax)} VND</td>
+              </tr>
+            </table>
+          </div>
+
+          ${footerHtml}
+        </div>
+      `;
+    } else if (tpl === 'kyowa-green') {
+      sheetBodyHtml = `
+        <div class="green-top-bar"></div>
+        <div class="kkvn-sheet-content">
+          <div class="green-header">
+            <div>
+              <img src="/assets/kkvn_logo.jpg" alt="KKVN" style="height:42px;object-fit:contain;">
+              <div style="font-size:8.5pt;font-weight:700;color:#2e7d32;margin-top:2px;">KYOWA KAKO VIET NAM CO., LTD</div>
+            </div>
+            <div style="text-align:right;">
+              <h1 class="green-doc-title">${esc(q.doc_title || '御見積 BÁO GIÁ')}</h1>
+              <div class="green-quote-pill">
+                No: ${esc(q.quote_number)} &nbsp;|&nbsp; Ngày: ${esc(formatDateDMY(q.quote_date))}
+              </div>
+            </div>
+          </div>
+
+          <div class="green-party-split">
+            <div class="green-party-col">
+              <div class="green-section-tag">Kính gửi / Customer</div>
+              <div style="font-size:10.5pt;font-weight:800;color:#b91c1c;margin-bottom:4px;">${esc(q.customer_name)}</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.customer_address || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">電話番号 Điện thoại</span><span class="kkvn-info-val">${esc(q.customer_phone || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">連絡先 Liên hệ</span><span class="kkvn-info-val">${esc(q.customer_contact || '—')}</span></div>
+            </div>
+            <div class="green-party-col right-col">
+              <div class="green-section-tag">Nhà cung cấp / Kyowa Kako</div>
+              <div style="font-size:10.5pt;font-weight:800;color:#1b5e20;margin-bottom:4px;">KYOWA KAKO VIET NAM CO., LTD</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.kkvn_address || '')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">承認者 Người duyệt</span><span class="kkvn-info-val bold-italic">${esc(q.approver_name)} ${esc(q.approver_phone)}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">担当者 Đảm trách</span><span class="kkvn-info-val bold-italic">${esc(q.pic_name)} ${esc(q.pic_phone)}</span></div>
+            </div>
+          </div>
+
+          <div class="kkvn-meta-lines" style="padding:4px 8px;border-left:3px solid #2e7d32;background:rgba(240,253,244,0.65);border-radius:0 4px 4px 0;">
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#166534;font-weight:600;">プロジェクト Dự Án :</span><strong>${esc(q.project_name || '')}</strong></div>
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#166534;font-weight:600;">設置先 Nơi lắp đặt :</span><span>${esc(q.install_location || '')}</span></div>
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#166534;font-weight:600;">納期 Thời gian đặt hàng :</span><span><strong>${esc(q.lead_time_days || 180)}</strong> &nbsp; 日間 ${esc(q.lead_time_note || 'Ngày (kể từ ngày nhận cọc)')}</span></div>
+          </div>
+
+          ${itemsTableHtml}
+
+          <div class="green-summary-bar">
+            <table class="green-summary-table">
+              ${anySecSubtotal ? `
+                <tr>
+                  <td><strong>${esc(t.total_label_before_tax || 'Total (A) + (B) - Before TAX')}</strong></td>
+                  <td style="text-align:right;font-weight:700;">${fmtPdfNum(q.subtotal_before_tax)} VND</td>
+                </tr>
+              ` : ''}
+              <tr>
+                <td><strong>TAX VAT (${Number(q.vat_percent || 0)}%)</strong></td>
+                <td style="text-align:right;font-weight:700;">${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) + ' VND' : '-'}</td>
+              </tr>
+              <tr class="grand-row">
+                <td>Total - After TAX</td>
+                <td style="text-align:right;">${fmtPdfNum(q.total_after_tax)} VND</td>
+              </tr>
+            </table>
+          </div>
+
+          ${footerHtml}
+        </div>
+      `;
+    } else if (tpl === 'japanese-jis') {
+      sheetBodyHtml = `
+        <div class="jis-outer-frame">
+          <div class="kkvn-sheet-content">
+            <div class="jis-meta-top">
+              <img src="/assets/kkvn_logo.jpg" alt="KKVN" style="height:34px;object-fit:contain;">
+              <div style="text-align:right;line-height:1.4;">
+                <div>見積番号 / No.: <strong>${formatQuoteNumberSplit(q.quote_number)}</strong></div>
+                <div>見積日 / Date: <strong style="color:#991b1b;">${esc(formatDateDMY(q.quote_date))}</strong></div>
+              </div>
+            </div>
+
+            <div class="jis-title-banner">
+              <h1 class="jis-title-text">${esc(q.doc_title || '御見積書 · BÁO GIÁ')}</h1>
+            </div>
+
+            <div class="jis-party-row">
+              <div class="jis-cust-col">
+                <div class="jis-cust-heading">
+                  <span>${esc(q.customer_name)}</span>
+                  <span style="font-size:10pt;color:#111827;">御中</span>
+                </div>
+                <div class="kkvn-info-line"><span class="kkvn-info-label">住所 Địa chỉ:</span><span class="kkvn-info-val">${esc(q.customer_address || '')}</span></div>
+                <div class="kkvn-info-line"><span class="kkvn-info-label">電話番号 Điện thoại:</span><span class="kkvn-info-val">${esc(q.customer_phone || '')}</span></div>
+                <div class="kkvn-info-line"><span class="kkvn-info-label">連絡先 Liên hệ:</span><span class="kkvn-info-val">${esc(q.customer_contact || '')}</span></div>
+                <div style="margin-top:5px;padding-top:4px;border-top:1px dashed #9ca3af;font-size:9pt;">
+                  <div><strong>プロジェクト Dự Án:</strong> ${esc(q.project_name || '')}</div>
+                  <div><strong>設置先 Nơi lắp đặt:</strong> ${esc(q.install_location || '')}</div>
+                  <div><strong>納期 Thời gian đặt hàng:</strong> <strong>${esc(q.lead_time_days || 180)}</strong> 日間 ${esc(q.lead_time_note || 'Ngày (kể từ ngày nhận cọc)')}</div>
+                </div>
+              </div>
+              <div class="jis-comp-col">
+                <div style="font-size:10.5pt;font-weight:700;color:#1f3864;margin-bottom:3px;">KYOWA KAKO VIET NAM CO., LTD</div>
+                <div style="font-size:8.8pt;margin-bottom:3px;">住所: ${esc(q.kkvn_address || '')}</div>
+                <div style="font-size:9pt;margin-bottom:2px;">承認者 Người duyệt: <strong><em>${esc(q.approver_name)}</em></strong> (${esc(q.approver_phone)})</div>
+                <div style="font-size:9pt;">担当者 Người đảm trách: <strong><em>${esc(q.pic_name)}</em></strong> (${esc(q.pic_phone)})</div>
+              </div>
+            </div>
+
+            <div class="jis-total-highlight">
+              <span class="jis-total-label">御見積金額 &nbsp; Tổng Giá Trị Báo Giá (Đã gồm VAT ${Number(q.vat_percent || 0)}%):</span>
+              <span class="jis-total-amount">${fmtPdfNum(q.total_after_tax)} VND</span>
+            </div>
+
+            ${itemsTableHtml}
+
+            <table class="kkvn-summary-block" style="margin-top:4px;">
+              ${anySecSubtotal ? `
+                <tr>
+                  <td style="width:95px"></td>
+                  <td>${esc(t.total_label_before_tax || 'Total (A) + (B) - Before TAX')}</td>
+                  <td style="width:110px;text-align:right;">${fmtPdfNum(q.subtotal_before_tax)}</td>
+                  <td style="width:92px"></td>
+                </tr>
+              ` : ''}
+              <tr>
+                <td style="width:95px"></td>
+                <td>TAX VAT &nbsp;&nbsp;&nbsp; ${Number(q.vat_percent || 0)}%</td>
+                <td style="width:110px;text-align:right;">${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) : '-'}</td>
+                <td style="width:92px"></td>
+              </tr>
+              <tr>
+                <td style="width:95px"></td>
+                <td style="border-top:1.5px solid #111827;">Total - After TAX</td>
+                <td style="width:110px;text-align:right;font-size:10.5pt;border-top:1.5px solid #111827;">${fmtPdfNum(q.total_after_tax)}</td>
+                <td style="width:92px"></td>
+              </tr>
+            </table>
+
+            ${footerHtml}
           </div>
         </div>
-      </div>
+      `;
+    } else if (tpl === 'luxury-gold') {
+      sheetBodyHtml = `
+        <div class="kkvn-sheet-content">
+          <div class="lux-banner">
+            <div>
+              <div class="lux-logo-pill">
+                <img src="/assets/kkvn_logo.jpg" alt="KKVN" style="height:34px;display:block;object-fit:contain;">
+              </div>
+              <div style="font-size:7.8pt;letter-spacing:0.6px;color:#e2e8f0;margin-top:4px;">KYOWA KAKO VIET NAM CO., LTD</div>
+            </div>
+            <div style="flex:1;">
+              <h1 class="lux-title">${esc(q.doc_title || '御見積 BÁO GIÁ')}</h1>
+              <div class="lux-subtitle">OFFICIAL PROJECT PROPOSAL</div>
+            </div>
+            <div class="lux-meta-pill">
+              <div>No.: <strong style="color:#f8e3a3;">${esc(q.quote_number)}</strong></div>
+              <div>Date: <strong>${esc(formatDateDMY(q.quote_date))}</strong></div>
+              <div>Rev: <strong>${String(q.revision || 1).padStart(2, '0')}</strong></div>
+            </div>
+          </div>
 
-      <div class="a4-preview-wrapper ${isMobileViewport && fitMobile ? 'mobile-fit-mode' : ''}">
-        <div class="kkvn-sheet" style="${mobileZoom < 1 ? `zoom: ${mobileZoom};` : ''}">
+          <div class="lux-party-grid">
+            <div class="lux-party-box">
+              <div style="font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#b48a3e;margin-bottom:2px;">Kính gửi / Valued Client</div>
+              <div style="font-size:10.8pt;font-weight:700;color:#991b1b;margin-bottom:4px;">${esc(q.customer_name)}</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.customer_address || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label">電話番号 Điện thoại</span><span class="kkvn-info-val">${esc(q.customer_phone || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label">連絡先 Liên hệ</span><span class="kkvn-info-val">${esc(q.customer_contact || '—')}</span></div>
+            </div>
+            <div class="lux-party-box">
+              <div style="font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#b48a3e;margin-bottom:2px;">Nhà cung cấp / Supplier</div>
+              <div style="font-size:10.8pt;font-weight:700;color:#0f172a;margin-bottom:4px;">KYOWA KAKO VIET NAM CO., LTD</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.kkvn_address || '')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label">承認者 Người duyệt</span><span class="kkvn-info-val bold-italic">${esc(q.approver_name)} ${esc(q.approver_phone)}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label">担当者 Đảm trách</span><span class="kkvn-info-val bold-italic">${esc(q.pic_name)} ${esc(q.pic_phone)}</span></div>
+            </div>
+          </div>
+
+          <div class="lux-project-bar">
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#475569;">プロジェクト Dự Án :</span><strong style="color:#0f172a;">${esc(q.project_name || '')}</strong></div>
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#475569;">設置先 Nơi lắp đặt :</span><span>${esc(q.install_location || '')}</span></div>
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#475569;">納期 Thời gian đặt hàng :</span><span><strong>${esc(q.lead_time_days || 180)}</strong> &nbsp; 日間 ${esc(q.lead_time_note || 'Ngày (kể từ ngày nhận cọc)')}</span></div>
+          </div>
+
+          ${itemsTableHtml}
+
+          <div class="lux-summary-wrap">
+            <table class="lux-summary-table">
+              ${anySecSubtotal ? `
+                <tr>
+                  <td><strong>${esc(t.total_label_before_tax || 'Total (A) + (B) - Before TAX')}</strong></td>
+                  <td style="text-align:right;font-weight:700;">${fmtPdfNum(q.subtotal_before_tax)} VND</td>
+                </tr>
+              ` : ''}
+              <tr>
+                <td><strong>TAX VAT (${Number(q.vat_percent || 0)}%)</strong></td>
+                <td style="text-align:right;font-weight:700;">${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) + ' VND' : '-'}</td>
+              </tr>
+              <tr class="grand-row">
+                <td>TỔNG CỘNG (After TAX)</td>
+                <td style="text-align:right;">${fmtPdfNum(q.total_after_tax)} VND</td>
+              </tr>
+            </table>
+          </div>
+
+          ${footerHtml}
+        </div>
+      `;
+    } else if (tpl === 'crimson-fdi') {
+      sheetBodyHtml = `
+        <div class="kkvn-sheet-content">
+          <div class="crim-header">
+            <div style="display:flex;align-items:center;gap:14px;">
+              <img src="/assets/kkvn_logo.jpg" alt="KKVN" style="height:40px;object-fit:contain;">
+              <div>
+                <h1 class="crim-title">${esc(q.doc_title || '御見積 BÁO GIÁ')}</h1>
+                <div style="font-size:8.2pt;font-weight:700;color:#4b5563;letter-spacing:0.6px;">KYOWA KAKO VIET NAM CO., LTD</div>
+              </div>
+            </div>
+            <div class="crim-right-card">
+              <div>Số BG / No.: <strong style="color:#fca5a5;">${esc(q.quote_number)}</strong></div>
+              <div>Ngày / Date: <strong>${esc(formatDateDMY(q.quote_date))}</strong></div>
+            </div>
+          </div>
+
+          <div class="crim-party-row">
+            <div class="crim-party-box">
+              <div style="font-size:7.5pt;font-weight:800;color:#991b1b;text-transform:uppercase;margin-bottom:2px;">Khách hàng / Customer</div>
+              <div style="font-size:10.5pt;font-weight:800;color:#111827;margin-bottom:3px;">${esc(q.customer_name)}</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#6b7280;">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.customer_address || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#6b7280;">電話番号 Điện thoại</span><span class="kkvn-info-val">${esc(q.customer_phone || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#6b7280;">連絡先 Liên hệ</span><span class="kkvn-info-val">${esc(q.customer_contact || '—')}</span></div>
+            </div>
+            <div class="crim-party-box comp">
+              <div style="font-size:7.5pt;font-weight:800;color:#1f2937;text-transform:uppercase;margin-bottom:2px;">Đơn vị cung cấp / Supplier</div>
+              <div style="font-size:10.5pt;font-weight:800;color:#1f2937;margin-bottom:3px;">KYOWA KAKO VIET NAM CO., LTD</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#6b7280;">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.kkvn_address || '')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#6b7280;">承認者 Người duyệt</span><span class="kkvn-info-val bold-italic">${esc(q.approver_name)} ${esc(q.approver_phone)}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#6b7280;">担当者 Đảm trách</span><span class="kkvn-info-val bold-italic">${esc(q.pic_name)} ${esc(q.pic_phone)}</span></div>
+            </div>
+          </div>
+
+          <div class="crim-meta-3col">
+            <div class="crim-meta-cell">
+              <strong>プロジェクト Dự Án</strong>
+              <span>${esc(q.project_name || '—')}</span>
+            </div>
+            <div class="crim-meta-cell">
+              <strong>設置先 Nơi lắp đặt</strong>
+              <span>${esc(q.install_location || '—')}</span>
+            </div>
+            <div class="crim-meta-cell">
+              <strong>納期 Thời gian đặt hàng</strong>
+              <span><b>${esc(q.lead_time_days || 180)}</b> 日間 ${esc(q.lead_time_note || 'Ngày')}</span>
+            </div>
+          </div>
+
+          ${itemsTableHtml}
+
+          <div class="crim-summary-wrap">
+            <table class="crim-summary-table">
+              ${anySecSubtotal ? `
+                <tr>
+                  <td><strong>${esc(t.total_label_before_tax || 'Total (A) + (B) - Before TAX')}</strong></td>
+                  <td style="text-align:right;font-weight:700;">${fmtPdfNum(q.subtotal_before_tax)} VND</td>
+                </tr>
+              ` : ''}
+              <tr>
+                <td><strong>TAX VAT (${Number(q.vat_percent || 0)}%)</strong></td>
+                <td style="text-align:right;font-weight:700;">${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) + ' VND' : '-'}</td>
+              </tr>
+              <tr class="grand-row">
+                <td>Total - After TAX</td>
+                <td style="text-align:right;">${fmtPdfNum(q.total_after_tax)} VND</td>
+              </tr>
+            </table>
+          </div>
+
+          ${footerHtml}
+        </div>
+      `;
+    } else if (tpl === 'tech-blueprint') {
+      sheetBodyHtml = `
+        <div class="kkvn-sheet-content">
+          <table class="tech-title-block">
+            <tr>
+              <td style="width:24%;text-align:center;">
+                <img src="/assets/kkvn_logo.jpg" alt="KKVN" style="height:36px;object-fit:contain;">
+              </td>
+              <td style="width:48%;text-align:center;">
+                <span class="tech-kicker">ENGINEERING &amp; ENVIRONMENTAL EQUIPMENT QUOTATION</span>
+                <div style="font-size:17pt;font-weight:800;color:#0c4a6e;letter-spacing:0.6px;line-height:1.15;">${esc(q.doc_title || '御見積 BÁO GIÁ')}</div>
+              </td>
+              <td style="width:28%;font-size:8.5pt;line-height:1.45;">
+                <div><span style="color:#0369a1;font-weight:700;">DOC NO.:</span> <strong>${esc(q.quote_number)}</strong></div>
+                <div><span style="color:#0369a1;font-weight:700;">DATE:</span> <strong style="color:#b91c1c;">${esc(formatDateDMY(q.quote_date))}</strong></div>
+                <div><span style="color:#0369a1;font-weight:700;">REV:</span> <strong>${String(q.revision || 1).padStart(2, '0')}</strong></div>
+              </td>
+            </tr>
+          </table>
+
+          <table class="tech-spec-table">
+            <tr>
+              <td class="lbl-cell">KHÁCH HÀNG<br>CUSTOMER</td>
+              <td style="width:32%;">
+                <strong style="color:#b91c1c;font-size:9.8pt;">${esc(q.customer_name)}</strong><br>
+                <span>住所: ${esc(q.customer_address || '—')}</span><br>
+                <span>TEL: ${esc(q.customer_phone || '—')} · ATTN: ${esc(q.customer_contact || '—')}</span>
+              </td>
+              <td class="lbl-cell">NHÀ CUNG CẤP<br>SUPPLIER</td>
+              <td style="width:32%;">
+                <strong style="color:#0c4a6e;font-size:9.8pt;">KYOWA KAKO VIET NAM CO., LTD</strong><br>
+                <span>住所: ${esc(q.kkvn_address || '')}</span><br>
+                <span>承認者: <b>${esc(q.approver_name)}</b> (${esc(q.approver_phone)})</span><br>
+                <span>担当者: <b>${esc(q.pic_name)}</b> (${esc(q.pic_phone)})</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="lbl-cell">プロジェクト DỰ ÁN</td>
+              <td><strong>${esc(q.project_name || '—')}</strong></td>
+              <td class="lbl-cell">設置先 / 納期</td>
+              <td>${esc(q.install_location || '—')} · <strong>${esc(q.lead_time_days || 180)}</strong> 日間 ${esc(q.lead_time_note || 'Ngày')}</td>
+            </tr>
+          </table>
+
+          ${itemsTableHtml}
+
+          <div class="tech-summary-wrap">
+            <table class="tech-summary-table">
+              ${anySecSubtotal ? `
+                <tr>
+                  <td><strong>${esc(t.total_label_before_tax || 'Total (A) + (B) - Before TAX')}</strong></td>
+                  <td style="text-align:right;font-weight:700;">${fmtPdfNum(q.subtotal_before_tax)} VND</td>
+                </tr>
+              ` : ''}
+              <tr>
+                <td><strong>TAX VAT (${Number(q.vat_percent || 0)}%)</strong></td>
+                <td style="text-align:right;font-weight:700;">${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) + ' VND' : '-'}</td>
+              </tr>
+              <tr class="grand-row">
+                <td>TOTAL - AFTER TAX</td>
+                <td style="text-align:right;">${fmtPdfNum(q.total_after_tax)} VND</td>
+              </tr>
+            </table>
+          </div>
+
+          ${footerHtml}
+        </div>
+      `;
+    } else if (tpl === 'minimal-mono') {
+      sheetBodyHtml = `
+        <div class="kkvn-sheet-content">
+          <div class="mono-header">
+            <div>
+              <img src="/assets/kkvn_logo.jpg" alt="KKVN" style="height:36px;object-fit:contain;margin-bottom:4px;">
+              <h1 class="mono-title">${esc(q.doc_title || '御見積 BÁO GIÁ')}</h1>
+            </div>
+            <div style="text-align:right;font-size:9.5pt;line-height:1.5;">
+              <div>Số báo giá / No.: <strong>${esc(q.quote_number)}</strong></div>
+              <div>Ngày lập / Date: <strong>${esc(formatDateDMY(q.quote_date))}</strong></div>
+              <div style="font-size:8.5pt;color:#6b7280;">KYOWA KAKO VIET NAM CO., LTD</div>
+            </div>
+          </div>
+
+          <div class="mono-party-grid">
+            <div>
+              <div class="mono-label-cap">To / Khách Hàng</div>
+              <div style="font-size:10.5pt;font-weight:800;margin-bottom:3px;">${esc(q.customer_name)}</div>
+              <div>Địa chỉ: ${esc(q.customer_address || '—')}</div>
+              <div>Điện thoại: ${esc(q.customer_phone || '—')} · Liên hệ: ${esc(q.customer_contact || '—')}</div>
+            </div>
+            <div>
+              <div class="mono-label-cap">From / Kyowa Kako Vietnam</div>
+              <div style="font-size:10.5pt;font-weight:800;margin-bottom:3px;">KYOWA KAKO VIET NAM CO., LTD</div>
+              <div>Địa chỉ: ${esc(q.kkvn_address || '')}</div>
+              <div>Người duyệt: <strong>${esc(q.approver_name)}</strong> (${esc(q.approver_phone)})</div>
+              <div>Đảm trách: <strong>${esc(q.pic_name)}</strong> (${esc(q.pic_phone)})</div>
+            </div>
+          </div>
+
+          <div class="kkvn-meta-lines" style="margin-bottom:8px;">
+            <div class="kkvn-meta-row"><span style="min-width:135px;color:#4b5563;">プロジェクト Dự Án :</span><strong>${esc(q.project_name || '')}</strong></div>
+            <div class="kkvn-meta-row"><span style="min-width:135px;color:#4b5563;">設置先 Nơi lắp đặt :</span><span>${esc(q.install_location || '')}</span></div>
+            <div class="kkvn-meta-row"><span style="min-width:135px;color:#4b5563;">納期 Thời gian đặt hàng :</span><span><strong>${esc(q.lead_time_days || 180)}</strong> 日間 ${esc(q.lead_time_note || 'Ngày (kể từ ngày nhận cọc)')}</span></div>
+          </div>
+
+          ${itemsTableHtml}
+
+          <div class="mono-summary-wrap">
+            <table class="mono-summary-table">
+              ${anySecSubtotal ? `
+                <tr>
+                  <td><strong>${esc(t.total_label_before_tax || 'Total (A) + (B) - Before TAX')}</strong></td>
+                  <td style="text-align:right;font-weight:700;">${fmtPdfNum(q.subtotal_before_tax)} VND</td>
+                </tr>
+              ` : ''}
+              <tr>
+                <td><strong>TAX VAT (${Number(q.vat_percent || 0)}%)</strong></td>
+                <td style="text-align:right;font-weight:700;">${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) + ' VND' : '-'}</td>
+              </tr>
+              <tr class="grand-row">
+                <td>Total - After TAX</td>
+                <td style="text-align:right;">${fmtPdfNum(q.total_after_tax)} VND</td>
+              </tr>
+            </table>
+          </div>
+
+          ${footerHtml}
+        </div>
+      `;
+    } else if (tpl === 'emerald-teal') {
+      sheetBodyHtml = `
+        <div class="kkvn-sheet-content">
+          <div class="teal-banner">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div class="teal-logo-box">
+                <img src="/assets/kkvn_logo.jpg" alt="KKVN" style="height:34px;display:block;object-fit:contain;">
+              </div>
+              <div>
+                <div style="font-size:17pt;font-weight:800;letter-spacing:0.6px;line-height:1.1;">${esc(q.doc_title || '御見積 BÁO GIÁ')}</div>
+                <div style="font-size:8pt;opacity:0.9;margin-top:2px;">KYOWA KAKO VIET NAM CO., LTD</div>
+              </div>
+            </div>
+            <div class="teal-badge">
+              <div>Số / No.: <strong style="color:#0f766e;">${esc(q.quote_number)}</strong></div>
+              <div>Ngày / Date: <strong style="color:#b91c1c;">${esc(formatDateDMY(q.quote_date))}</strong></div>
+            </div>
+          </div>
+
+          <div class="teal-party-grid">
+            <div class="teal-card">
+              <div style="font-size:7.5pt;font-weight:800;color:#0f766e;text-transform:uppercase;margin-bottom:2px;">Khách hàng / Customer</div>
+              <div style="font-size:10.5pt;font-weight:800;color:#b91c1c;margin-bottom:3px;">${esc(q.customer_name)}</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.customer_address || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">電話番号 Điện thoại</span><span class="kkvn-info-val">${esc(q.customer_phone || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">連絡先 Liên hệ</span><span class="kkvn-info-val">${esc(q.customer_contact || '—')}</span></div>
+            </div>
+            <div class="teal-card">
+              <div style="font-size:7.5pt;font-weight:800;color:#0f766e;text-transform:uppercase;margin-bottom:2px;">Nhà cung cấp / Supplier</div>
+              <div style="font-size:10.5pt;font-weight:800;color:#134e4a;margin-bottom:3px;">KYOWA KAKO VIET NAM CO., LTD</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.kkvn_address || '')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">承認者 Người duyệt</span><span class="kkvn-info-val bold-italic">${esc(q.approver_name)} ${esc(q.approver_phone)}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">担当者 Đảm trách</span><span class="kkvn-info-val bold-italic">${esc(q.pic_name)} ${esc(q.pic_phone)}</span></div>
+            </div>
+          </div>
+
+          <div class="teal-project-bar">
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#0f766e;font-weight:600;">プロジェクト Dự Án :</span><strong style="color:#0f172a;">${esc(q.project_name || '')}</strong></div>
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#0f766e;font-weight:600;">設置先 Nơi lắp đặt :</span><span style="color:#0f172a;">${esc(q.install_location || '')}</span></div>
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#0f766e;font-weight:600;">納期 Thời gian đặt hàng :</span><span style="color:#0f172a;"><strong>${esc(q.lead_time_days || 180)}</strong> &nbsp; 日間 ${esc(q.lead_time_note || 'Ngày (kể từ ngày nhận cọc)')}</span></div>
+          </div>
+
+          ${itemsTableHtml}
+
+          <div class="teal-summary-wrap">
+            <table class="teal-summary-table">
+              ${anySecSubtotal ? `
+                <tr>
+                  <td><strong>${esc(t.total_label_before_tax || 'Total (A) + (B) - Before TAX')}</strong></td>
+                  <td style="text-align:right;font-weight:700;">${fmtPdfNum(q.subtotal_before_tax)} VND</td>
+                </tr>
+              ` : ''}
+              <tr>
+                <td><strong>TAX VAT (${Number(q.vat_percent || 0)}%)</strong></td>
+                <td style="text-align:right;font-weight:700;">${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) + ' VND' : '-'}</td>
+              </tr>
+              <tr class="grand-row">
+                <td>Total - After TAX</td>
+                <td style="text-align:right;">${fmtPdfNum(q.total_after_tax)} VND</td>
+              </tr>
+            </table>
+          </div>
+
+          ${footerHtml}
+        </div>
+      `;
+    } else if (tpl === 'royal-indigo') {
+      sheetBodyHtml = `
+        <div class="kkvn-sheet-content">
+          <div class="ind-header">
+            <div>
+              <img src="/assets/kkvn_logo.jpg" alt="KKVN" style="height:38px;object-fit:contain;">
+              <div style="font-size:8.2pt;font-weight:700;color:#312e81;margin-top:2px;">KYOWA KAKO VIET NAM CO., LTD</div>
+            </div>
+            <div class="ind-title-badge">
+              <div style="font-size:17pt;font-weight:800;letter-spacing:0.8px;line-height:1.1;">${esc(q.doc_title || '御見積 BÁO GIÁ')}</div>
+              <div style="font-size:7.8pt;letter-spacing:1.2px;color:#c7d2fe;margin-top:2px;">COMMERCIAL QUOTATION</div>
+            </div>
+            <div style="text-align:right;font-size:9pt;line-height:1.45;">
+              <div>No.: <strong style="color:#312e81;">${esc(q.quote_number)}</strong></div>
+              <div>Date: <strong style="color:#be123c;">${esc(formatDateDMY(q.quote_date))}</strong></div>
+              <div>Rev: <strong>${String(q.revision || 1).padStart(2, '0')}</strong></div>
+            </div>
+          </div>
+
+          <div class="ind-party-grid">
+            <div class="ind-party-card cust">
+              <div style="font-size:7.5pt;font-weight:800;color:#be123c;text-transform:uppercase;margin-bottom:2px;">Khách hàng / Client</div>
+              <div style="font-size:10.5pt;font-weight:800;color:#881337;margin-bottom:3px;">${esc(q.customer_name)}</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.customer_address || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">電話番号 Điện thoại</span><span class="kkvn-info-val">${esc(q.customer_phone || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">連絡先 Liên hệ</span><span class="kkvn-info-val">${esc(q.customer_contact || '—')}</span></div>
+            </div>
+            <div class="ind-party-card">
+              <div style="font-size:7.5pt;font-weight:800;color:#312e81;text-transform:uppercase;margin-bottom:2px;">Đơn vị báo giá / Contractor</div>
+              <div style="font-size:10.5pt;font-weight:800;color:#1e1b4b;margin-bottom:3px;">KYOWA KAKO VIET NAM CO., LTD</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.kkvn_address || '')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">承認者 Người duyệt</span><span class="kkvn-info-val bold-italic">${esc(q.approver_name)} ${esc(q.approver_phone)}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#475569;">担当者 Đảm trách</span><span class="kkvn-info-val bold-italic">${esc(q.pic_name)} ${esc(q.pic_phone)}</span></div>
+            </div>
+          </div>
+
+          <div class="kkvn-meta-lines" style="padding:5px 9px;background:rgba(238,242,255,0.55);border-radius:5px;border:1px solid #c7d2fe;">
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#312e81;font-weight:600;">プロジェクト Dự Án :</span><strong>${esc(q.project_name || '')}</strong></div>
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#312e81;font-weight:600;">設置先 Nơi lắp đặt :</span><span>${esc(q.install_location || '')}</span></div>
+            <div class="kkvn-meta-row"><span style="min-width:140px;color:#312e81;font-weight:600;">納期 Thời gian đặt hàng :</span><span><strong>${esc(q.lead_time_days || 180)}</strong> &nbsp; 日間 ${esc(q.lead_time_note || 'Ngày (kể từ ngày nhận cọc)')}</span></div>
+          </div>
+
+          ${itemsTableHtml}
+
+          <div class="ind-summary-wrap">
+            <table class="ind-summary-table">
+              ${anySecSubtotal ? `
+                <tr>
+                  <td><strong>${esc(t.total_label_before_tax || 'Total (A) + (B) - Before TAX')}</strong></td>
+                  <td style="text-align:right;font-weight:700;">${fmtPdfNum(q.subtotal_before_tax)} VND</td>
+                </tr>
+              ` : ''}
+              <tr>
+                <td><strong>TAX VAT (${Number(q.vat_percent || 0)}%)</strong></td>
+                <td style="text-align:right;font-weight:700;">${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) + ' VND' : '-'}</td>
+              </tr>
+              <tr class="grand-row">
+                <td>Total - After TAX</td>
+                <td style="text-align:right;">${fmtPdfNum(q.total_after_tax)} VND</td>
+              </tr>
+            </table>
+          </div>
+
+          ${footerHtml}
+        </div>
+      `;
+    } else if (tpl === 'bronze-heritage') {
+      sheetBodyHtml = `
+        <div class="kkvn-sheet-content">
+          <div class="brz-header">
+            <div style="text-align:left;">
+              <img src="/assets/kkvn_logo.jpg" alt="KKVN" style="height:35px;object-fit:contain;">
+              <div style="font-size:9.5pt;font-weight:700;color:#78350f;margin-top:2px;">${formatQuoteNumberSplit(q.quote_number)}</div>
+            </div>
+            <div>
+              <h1 class="brz-title">${esc(q.doc_title || '御見積 BÁO GIÁ')}</h1>
+              <div style="font-size:8pt;letter-spacing:1.2px;color:#92400e;">KYOWA KAKO VIET NAM CO., LTD</div>
+            </div>
+            <div style="text-align:right;font-size:10pt;font-weight:700;color:#991b1b;">
+              ${esc(formatDateDMY(q.quote_date))}
+            </div>
+          </div>
+
+          <table class="brz-party-table">
+            <tr>
+              <td>
+                <div style="font-size:10.5pt;font-weight:700;color:#991b1b;border-bottom:1px solid #d6d3d1;padding-bottom:2px;margin-bottom:4px;">${esc(q.customer_name)}</div>
+                <div class="kkvn-info-line"><span class="kkvn-info-label">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.customer_address || '—')}</span></div>
+                <div class="kkvn-info-line"><span class="kkvn-info-label">電話番号 Điện thoại</span><span class="kkvn-info-val">${esc(q.customer_phone || '—')}</span></div>
+                <div class="kkvn-info-line"><span class="kkvn-info-label">連絡先 Liên hệ</span><span class="kkvn-info-val">${esc(q.customer_contact || '—')}</span></div>
+              </td>
+              <td>
+                <div style="font-size:10.5pt;font-weight:700;color:#78350f;border-bottom:1px solid #d6d3d1;padding-bottom:2px;margin-bottom:4px;">KYOWA KAKO VIET NAM CO., LTD</div>
+                <div class="kkvn-info-line"><span class="kkvn-info-label">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.kkvn_address || '')}</span></div>
+                <div class="kkvn-info-line"><span class="kkvn-info-label">承認者 Người duyệt</span><span class="kkvn-info-val bold-italic">${esc(q.approver_name)} ${esc(q.approver_phone)}</span></div>
+                <div class="kkvn-info-line"><span class="kkvn-info-label">担当者 Đảm trách</span><span class="kkvn-info-val bold-italic">${esc(q.pic_name)} ${esc(q.pic_phone)}</span></div>
+              </td>
+            </tr>
+          </table>
+
+          <div class="kkvn-meta-lines">
+            <div class="kkvn-meta-row"><span style="min-width:135px;color:#78350f;font-weight:700;">プロジェクト Dự Án :</span><strong>${esc(q.project_name || '')}</strong></div>
+            <div class="kkvn-meta-row"><span style="min-width:135px;color:#78350f;font-weight:700;">設置先 Nơi lắp đặt :</span><span>${esc(q.install_location || '')}</span></div>
+            <div class="kkvn-meta-row"><span style="min-width:135px;color:#78350f;font-weight:700;">納期 Thời gian đặt hàng :</span><span><strong>${esc(q.lead_time_days || 180)}</strong> &nbsp; 日間 ${esc(q.lead_time_note || 'Ngày (kể từ ngày nhận cọc)')}</span></div>
+          </div>
+
+          ${itemsTableHtml}
+
+          <div class="brz-summary-wrap">
+            <table class="brz-summary-table">
+              ${anySecSubtotal ? `
+                <tr>
+                  <td><strong>${esc(t.total_label_before_tax || 'Total (A) + (B) - Before TAX')}</strong></td>
+                  <td style="text-align:right;font-weight:700;">${fmtPdfNum(q.subtotal_before_tax)} VND</td>
+                </tr>
+              ` : ''}
+              <tr>
+                <td><strong>TAX VAT (${Number(q.vat_percent || 0)}%)</strong></td>
+                <td style="text-align:right;font-weight:700;">${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) + ' VND' : '-'}</td>
+              </tr>
+              <tr class="grand-row">
+                <td>Total - After TAX</td>
+                <td style="text-align:right;">${fmtPdfNum(q.total_after_tax)} VND</td>
+              </tr>
+            </table>
+          </div>
+
+          ${footerHtml}
+        </div>
+      `;
+    } else if (tpl === 'slate-sidebar') {
+      sheetBodyHtml = `
+        <div class="side-accent-rail"></div>
+        <div class="kkvn-sheet-content">
+          <div class="side-header">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <img src="/assets/kkvn_logo.jpg" alt="KKVN" style="height:38px;object-fit:contain;">
+              <div>
+                <div style="font-size:19pt;font-weight:800;color:#0f172a;line-height:1.1;">${esc(q.doc_title || '御見積 BÁO GIÁ')}</div>
+                <div style="font-size:8pt;font-weight:700;color:#059669;letter-spacing:0.8px;">KYOWA KAKO VIET NAM CO., LTD</div>
+              </div>
+            </div>
+            <div style="text-align:right;font-size:9pt;line-height:1.45;">
+              <div>No.: <strong style="color:#0f172a;">${esc(q.quote_number)}</strong></div>
+              <div>Date: <strong style="color:#059669;">${esc(formatDateDMY(q.quote_date))}</strong></div>
+            </div>
+          </div>
+
+          <div class="side-party-grid">
+            <div class="side-party-card cust">
+              <div style="font-size:7.5pt;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:2px;">Khách hàng / Customer</div>
+              <div style="font-size:10.5pt;font-weight:800;color:#b91c1c;margin-bottom:3px;">${esc(q.customer_name)}</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#64748b;">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.customer_address || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#64748b;">電話番号 Điện thoại</span><span class="kkvn-info-val">${esc(q.customer_phone || '—')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#64748b;">連絡先 Liên hệ</span><span class="kkvn-info-val">${esc(q.customer_contact || '—')}</span></div>
+            </div>
+            <div class="side-party-card">
+              <div style="font-size:7.5pt;font-weight:800;color:#059669;text-transform:uppercase;margin-bottom:2px;">Nhà cung cấp / Supplier</div>
+              <div style="font-size:10.5pt;font-weight:800;color:#0f172a;margin-bottom:3px;">KYOWA KAKO VIET NAM CO., LTD</div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#64748b;">住所 Địa chỉ</span><span class="kkvn-info-val">${esc(q.kkvn_address || '')}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#64748b;">承認者 Người duyệt</span><span class="kkvn-info-val bold-italic">${esc(q.approver_name)} ${esc(q.approver_phone)}</span></div>
+              <div class="kkvn-info-line"><span class="kkvn-info-label" style="color:#64748b;">担当者 Đảm trách</span><span class="kkvn-info-val bold-italic">${esc(q.pic_name)} ${esc(q.pic_phone)}</span></div>
+            </div>
+          </div>
+
+          <div class="kkvn-meta-lines" style="padding:4px 8px;border-left:3px solid #059669;background:rgba(248,250,252,0.72);">
+            <div class="kkvn-meta-row"><span style="min-width:135px;color:#475569;">プロジェクト Dự Án :</span><strong>${esc(q.project_name || '')}</strong></div>
+            <div class="kkvn-meta-row"><span style="min-width:135px;color:#475569;">設置先 Nơi lắp đặt :</span><span>${esc(q.install_location || '')}</span></div>
+            <div class="kkvn-meta-row"><span style="min-width:135px;color:#475569;">納期 Thời gian đặt hàng :</span><span><strong>${esc(q.lead_time_days || 180)}</strong> &nbsp; 日間 ${esc(q.lead_time_note || 'Ngày (kể từ ngày nhận cọc)')}</span></div>
+          </div>
+
+          ${itemsTableHtml}
+
+          <div class="side-summary-wrap">
+            <table class="side-summary-table">
+              ${anySecSubtotal ? `
+                <tr>
+                  <td><strong>${esc(t.total_label_before_tax || 'Total (A) + (B) - Before TAX')}</strong></td>
+                  <td style="text-align:right;font-weight:700;">${fmtPdfNum(q.subtotal_before_tax)} VND</td>
+                </tr>
+              ` : ''}
+              <tr>
+                <td><strong>TAX VAT (${Number(q.vat_percent || 0)}%)</strong></td>
+                <td style="text-align:right;font-weight:700;">${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) + ' VND' : '-'}</td>
+              </tr>
+              <tr class="grand-row">
+                <td>Total - After TAX</td>
+                <td style="text-align:right;">${fmtPdfNum(q.total_after_tax)} VND</td>
+              </tr>
+            </table>
+          </div>
+
+          ${footerHtml}
+        </div>
+      `;
+    } else {
+      // Template 4: Classic KKVN Refined
+      sheetBodyHtml = `
+        <div class="kkvn-sheet-content">
           <div class="kkvn-top-bar">
             <div class="kkvn-logo-block">
               <img src="/assets/kkvn_logo.jpg" alt="KKVN" class="kkvn-logo-img">
@@ -3017,129 +3944,168 @@ const App = (() => {
             </div>
           </div>
 
-          <table class="kkvn-items-table">
-            <thead>
-              <tr>
-                <th style="width:42px">番号<br>STT</th>
-                <th>明細<br>Chi Tiết</th>
-                <th style="width:58px">単位<br>Đơn Vị</th>
-                <th style="width:36px">数<br>SL</th>
-                <th style="width:98px">単価<br>Đơn giá</th>
-                <th style="width:104px">金額(VND)<br>Thành Tiền</th>
-                <th style="width:96px">備考<br>Ghi Chú</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${tableRowsHtml}
-            </tbody>
-          </table>
+          ${itemsTableHtml}
 
           <table class="kkvn-summary-block">
             ${anySecSubtotal ? `
               <tr>
                 <td style="width:95px"></td>
                 <td>${esc(t.total_label_before_tax || 'Total (A) + (B) - Before TAX')}</td>
-                <td style="width:104px;text-align:right;">${fmtPdfNum(q.subtotal_before_tax)}</td>
-                <td style="width:96px"></td>
+                <td style="width:106px;text-align:right;">${fmtPdfNum(q.subtotal_before_tax)}</td>
+                <td style="width:92px"></td>
               </tr>
             ` : ''}
             <tr>
               <td style="width:95px"></td>
               <td>TAX VAT &nbsp;&nbsp;&nbsp; ${Number(q.vat_percent || 0)}%</td>
-              <td style="width:104px;text-align:right;">${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) : '-'}</td>
-              <td style="width:96px"></td>
+              <td style="width:106px;text-align:right;">${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) : '-'}</td>
+              <td style="width:92px"></td>
             </tr>
             <tr>
               <td style="width:95px"></td>
               <td>Total - After TAX</td>
-              <td style="width:104px;text-align:right;font-size:10.5pt;">${fmtPdfNum(q.total_after_tax)}</td>
-              <td style="width:96px"></td>
+              <td style="width:106px;text-align:right;font-size:10.5pt;">${fmtPdfNum(q.total_after_tax)}</td>
+              <td style="width:92px"></td>
             </tr>
           </table>
 
-          <div class="kkvn-footer-grid">
-            <div class="kkvn-notes-col">
-              <div class="kkvn-notes-title">記 Ghi chú</div>
+          ${footerHtml}
+        </div>
+      `;
+    }
 
-              <div class="kkvn-note-item">
-                <span>①</span>
-                <div>
-                  <div>Thời hạn báo giá &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: &nbsp; <strong>${esc(t.validity_days ?? 30)}</strong> &nbsp; ngày</div>
-                  <div>見積の有効期限 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: &nbsp; <strong>${esc(t.validity_days ?? 30)}</strong> &nbsp; 日間</div>
-                </div>
-              </div>
+    const isMobileViewport = window.innerWidth <= 840;
+    const fitMobile = state.fitMobileA4 !== false;
+    const mobileZoom = (isMobileViewport && fitMobile)
+      ? Math.max(0.38, Math.min(1, (window.innerWidth - 28) / 794)).toFixed(3)
+      : 1;
+    const activeTplObj = PRINT_TEMPLATES.find(x => x.id === tpl) || PRINT_TEMPLATES[0];
+    const pickerOpen = Boolean(state.printPickerOpen);
 
-              <div class="kkvn-note-item">
-                <span>②</span>
-                <div>
-                  <div>Địa điểm giao hàng &nbsp;: &nbsp; ${esc(t.delivery_place_vi || 'Tại chân công trình')}</div>
-                  <div>Delivery先 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: &nbsp; ${esc(t.delivery_place_jp || '工事現場で引き渡し')}</div>
-                </div>
-              </div>
+    container.innerHTML = `
+      <div class="card no-print" style="padding:12px 14px;margin-bottom:12px;">
+        <div class="row-between">
+          <div>
+            <h2 class="card-title" style="margin:0">Xem Trước Bản In / Xuất PDF, Word & Excel</h2>
+          </div>
+          <div class="row">
+            <select onchange="App.loadQuotationById(this.value)">
+              ${state.quotations.map(sq => `
+                <option value="${sq.id}" ${sq.id === q.id ? 'selected' : ''}>
+                  [${esc(sq.quote_number)}] ${esc(sq.customer_name)}
+                </option>
+              `).join('')}
+            </select>
+            <button type="button" class="btn ${pickerOpen ? 'btn-navy' : ''}" onclick="App.togglePrintPicker()" title="Bấm để chọn 1 trong 12 mẫu biểu in & chỉnh Logo chìm giữa trang">
+              <span class="tpl-swatch-row" style="margin-right:2px;">
+                ${activeTplObj.swatches.map(c => `<span class="tpl-swatch" style="background:${c};height:13px;width:8px;"></span>`).join('')}
+              </span>
+              ${esc(activeTplObj.name)} ${pickerOpen ? '▴' : '▾'}
+            </button>
+            ${isMobileViewport ? `
+              <button class="btn" onclick="App.toggleMobileA4Fit()">
+                ${fitMobile ? '🔍 Phóng to 100%' : '📱 Thu vừa màn hình ĐT'}
+              </button>
+            ` : ''}
+            <button class="btn" onclick="App.showTab('flow2')">
+              ✏️ Chỉnh sửa
+            </button>
+            ${canUserMarkSent(q) ? `
+              <button class="btn" style="background:#2563eb;color:#fff;border-color:#1d4ed8;" onclick="App.changeQuoteStatus(${q.id}, 'sent')">
+                📨 Đánh dấu Đã gửi KH
+              </button>
+            ` : ''}
+            <button class="btn" id="btnExportPdfDirect" onclick="App.exportActiveQuoteToPdf(this)" title="Tải trực tiếp file PDF (.pdf) chuẩn khổ A4 về máy (Không mở hộp thoại máy in)">
+              📄 Xuất PDF (.pdf)
+            </button>
+            <button class="btn" onclick="App.exportActiveQuoteToWord()" title="Tải về file Word (.doc) theo mẫu đang chọn để chỉnh sửa trong Microsoft Word">
+              📝 Xuất Word (.doc)
+            </button>
+            <button class="btn" onclick="App.exportActiveQuoteToExcel()" title="Tải về file Excel (.xlsx) chuẩn bảng tính báo giá KKVN">
+              📊 Xuất Excel (.xlsx)
+            </button>
+            <button class="btn btn-navy" onclick="window.print()" title="Mở hộp thoại kết nối máy in để in giấy trực tiếp">
+              🖨️ In
+            </button>
+          </div>
+        </div>
 
-              <div class="kkvn-note-item">
-                <span>③</span>
-                <div>
-                  <div>Thời gian giao hàng : &nbsp; <strong>${esc(t.delivery_days ?? q.lead_time_days ?? 180)}</strong> Ngày (Tính từ khi nhận cọc)</div>
-                  <div>納期日.月.年 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: &nbsp; <strong>${esc(t.delivery_days ?? q.lead_time_days ?? 180)}</strong> 日間 (頭金を受けてから)</div>
-                </div>
-              </div>
-
-              <div class="kkvn-note-item">
-                <span>④</span>
-                <div>
-                  <div>Thời hạn bảo hành &nbsp;&nbsp;: &nbsp; <strong>${esc(t.warranty_months ?? 12)}</strong> Tháng (Tính từ khi giao hàng)</div>
-                  <div>保証期間は設置後: &nbsp; <strong>${esc(t.warranty_months ?? 12)}</strong> か月（設置後から計算）</div>
-                </div>
-              </div>
-
-              <div class="kkvn-note-item">
-                <span>⑤</span>
-                <div class="${t.note_5_highlight ? 'kkvn-note-red' : ''}" style="white-space:pre-line;">${esc(t.note_5_vi || '')}</div>
-              </div>
-
-              <div class="kkvn-note-item">
-                <span>⑥</span>
-                <div>
-                  <div>Phương pháp thanh toán 支払方法 :</div>
-                  ${(t.payment_lines || []).map(pl => `<div style="padding-left:6px;">${esc(pl)}</div>`).join('')}
-                </div>
-              </div>
-
-              <div class="kkvn-note-item">
-                <span>⑦</span>
-                <div>
-                  <div>Thông tin tài khoản &nbsp; 記銀行口座</div>
-                  <div style="padding-left:8px;">
-                    Tên tài khoản 口座名義 : &nbsp; ${esc(t.bank_account_name_vi || 'KYOWA KAKO VIETNAM CO.,LTD')}<br>
-                    Số tài khoản 口座番号 &nbsp;: &nbsp; <strong>${esc(t.bank_account_no || '3680022466')}</strong><br>
-                    Ngân hàng 銀行名 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: &nbsp; ${esc(t.bank_name_vi || 'BIDV Bank - Tan Binh Branch, HCMC')}
-                  </div>
-                </div>
-              </div>
-
-              <div class="kkvn-approval-box">
-                <div style="display:flex;justify-content:space-between;">
-                  <span>見積承認 Duyệt giá báo</span>
-                  <span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; / &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /</span>
-                </div>
-              </div>
+        ${pickerOpen ? `
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+            <div class="template-picker-grid">
+              ${PRINT_TEMPLATES.map(item => `
+                <button type="button" class="tpl-card ${tpl === item.id ? 'active' : ''}" onclick="App.setPrintTemplate('${item.id}')" title="${esc(item.desc)}">
+                  <span class="tpl-swatch-row">
+                    ${item.swatches.map(c => `<span class="tpl-swatch" style="background:${c};"></span>`).join('')}
+                  </span>
+                  <span class="tpl-card-title">${esc(item.name)}</span>
+                </button>
+              `).join('')}
             </div>
 
-            <div class="kkvn-sign-col">
-              <div style="font-weight:600;margin-bottom:4px;">営業部 Phòng Kinh Doanh</div>
-              <div class="kkvn-stamp-wrap">
-                ${stampImgSrc ? `<img src="${stampImgSrc}" alt="Stamp" class="kkvn-stamp-img">` : '<div style="height:120px"></div>'}
-                ${q.stamp_type === 'tayninh' || q.stamp_type === 'none' ? `
-                  <div style="font-weight:700;font-size:10.5pt;margin-top:4px;">${esc(q.signer_name || 'NGUYỄN BẢO TRƯỜNG')}</div>
+            <div class="watermark-controls-bar">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--navy);cursor:pointer;">
+                <input type="checkbox" ${showWatermark ? 'checked' : ''} onchange="App.togglePrintWatermark(this.checked)" style="width:15px;height:15px;">
+                💧 Logo chìm giữa trang
+              </label>
+
+              <div class="row" style="align-items:center;gap:10px;">
+                ${showWatermark ? `
+                  <div class="row" style="align-items:center;gap:4px;">
+                    <span style="font-size:11.5px;font-weight:700;color:var(--muted);">Độ mờ:</span>
+                    ${[
+                      { v: 0.06, lbl: '6%' },
+                      { v: 0.10, lbl: '10%' },
+                      { v: 0.15, lbl: '15%' },
+                      { v: 0.22, lbl: '22%' }
+                    ].map(o => `
+                      <button type="button" class="btn btn-sm ${Math.abs(wmOpacity - o.v) < 0.005 ? 'btn-navy' : ''}"
+                              style="padding:2px 7px;font-size:11.5px;"
+                              onclick="App.setPrintWatermarkOpacity(${o.v})">${o.lbl}</button>
+                    `).join('')}
+                  </div>
+
+                  <div class="row" style="align-items:center;gap:4px;">
+                    <span style="font-size:11.5px;font-weight:700;color:var(--muted);">Cỡ Logo:</span>
+                    ${[
+                      { v: 380, lbl: 'Vừa' },
+                      { v: 490, lbl: 'To' },
+                      { v: 590, lbl: 'Rất to' }
+                    ].map(sz => `
+                      <button type="button" class="btn btn-sm ${wmSize === sz.v ? 'btn-navy' : ''}"
+                              style="padding:2px 7px;font-size:11.5px;"
+                              onclick="App.setPrintWatermarkSize(${sz.v})">${sz.lbl}</button>
+                    `).join('')}
+                  </div>
                 ` : ''}
+                <button type="button" class="btn btn-sm" onclick="App.togglePrintPicker()" style="padding:2px 9px;font-size:11.5px;">
+                  ▲ Thu gọn
+                </button>
               </div>
             </div>
           </div>
+        ` : ''}
+      </div>
 
+      <div class="a4-preview-wrapper ${isMobileViewport && fitMobile ? 'mobile-fit-mode' : ''}">
+        <div class="kkvn-sheet tpl-${esc(tpl)}" style="${mobileZoom < 1 ? `zoom: ${mobileZoom};` : ''}">
+          ${watermarkLayerHtml}
+          ${sheetBodyHtml}
         </div>
       </div>
     `;
+
+    // Tách nền trắng & tạo sẵn PNG Watermark trong suốt cho hiển thị và xuất PDF/Word cực sắc nét
+    if (showWatermark) {
+      getTransparentWatermarkDataUrl(wmOpacity).then(pngUrl => {
+        const wmEl = document.getElementById('sheetWatermarkImg');
+        if (wmEl && pngUrl) {
+          wmEl.src = pngUrl;
+          wmEl.style.opacity = '1';
+          wmEl.style.mixBlendMode = 'normal';
+        }
+      });
+    }
   }
 
   // ===========================================================================
@@ -3233,12 +4199,23 @@ const App = (() => {
       clone.style.maxWidth = '100%';
       clone.style.minHeight = 'auto';
       clone.style.margin = '0';
-      clone.style.padding = '8mm 10mm';
       clone.style.boxShadow = 'none';
       clone.style.boxSizing = 'border-box';
       clone.style.background = '#ffffff';
 
-      // Nhúng ảnh Logo & Con dấu sang Base64 trên bản sao để html2canvas vẽ đầy đủ 100%
+      // Đảm bảo Watermark Logo chìm giữa trang dùng ảnh PNG đã tách nền trắng & đúng độ mờ opacity để html2canvas vẽ chuẩn xác 100%
+      const wmImg = clone.querySelector('.kkvn-watermark-img');
+      if (wmImg) {
+        const wmOpacity = Number(state.printWatermarkOpacity || 0.10);
+        const wmDataUrl = await getTransparentWatermarkDataUrl(wmOpacity);
+        if (wmDataUrl) {
+          wmImg.setAttribute('src', wmDataUrl);
+          wmImg.style.opacity = '1';
+          wmImg.style.mixBlendMode = 'normal';
+        }
+      }
+
+      // Nhúng các ảnh Logo & Con dấu khác sang Base64 trên bản sao để html2canvas vẽ đầy đủ 100%
       const imgs = Array.from(clone.querySelectorAll('img'));
       await Promise.all(imgs.map(async (img) => {
         const src = img.getAttribute('src');
@@ -3320,9 +4297,32 @@ const App = (() => {
         ? '/assets/stamp_longan.png'
         : null;
 
-    const [logoDataUrl, stampDataUrl] = await Promise.all([
+    const tpl = state.printTemplate || 'executive';
+    const showWatermark = state.printWatermark !== false;
+    const wmOpacity = Number(state.printWatermarkOpacity || 0.10);
+    const wmSizePt = Math.round(Number(state.printWatermarkSize || 490) * 0.72);
+    const wmHeightPt = Math.round(wmSizePt * 0.46);
+
+    const themeColorsMap = {
+      'executive': { primary: '#1f3864', headBg: '#1f3864', headFg: '#ffffff', secBg: '#e2e8f0', grandBg: '#1f3864', grandFg: '#ffffff', accent: '#4e954d' },
+      'kyowa-green': { primary: '#2e7d32', headBg: '#2e7d32', headFg: '#ffffff', secBg: '#e8f5e9', grandBg: '#2e7d32', grandFg: '#ffffff', accent: '#4e954d' },
+      'japanese-jis': { primary: '#111827', headBg: '#f1f5f9', headFg: '#111827', secBg: '#f3f4f6', grandBg: '#f8fafc', grandFg: '#111827', accent: '#111827' },
+      'classic': { primary: '#1f3864', headBg: '#e2e8f0', headFg: '#000000', secBg: '#f1f5f9', grandBg: '#f0fdf4', grandFg: '#000000', accent: '#1f3864' },
+      'luxury-gold': { primary: '#0f172a', headBg: '#0f172a', headFg: '#f8e3a3', secBg: '#fef9e7', grandBg: '#0f172a', grandFg: '#f8e3a3', accent: '#c59b27' },
+      'crimson-fdi': { primary: '#991b1b', headBg: '#991b1b', headFg: '#ffffff', secBg: '#fee2e2', grandBg: '#991b1b', grandFg: '#ffffff', accent: '#991b1b' },
+      'tech-blueprint': { primary: '#0c4a6e', headBg: '#0c4a6e', headFg: '#e0f2fe', secBg: '#e0f2fe', grandBg: '#0c4a6e', grandFg: '#ffffff', accent: '#0284c7' },
+      'minimal-mono': { primary: '#111827', headBg: '#ffffff', headFg: '#111827', secBg: '#f3f4f6', grandBg: '#ffffff', grandFg: '#111827', accent: '#111827' },
+      'emerald-teal': { primary: '#0f766e', headBg: '#0f766e', headFg: '#ffffff', secBg: '#ccfbf1', grandBg: '#0f766e', grandFg: '#ffffff', accent: '#14b8a6' },
+      'royal-indigo': { primary: '#312e81', headBg: '#312e81', headFg: '#ffffff', secBg: '#e0e7ff', grandBg: '#312e81', grandFg: '#ffffff', accent: '#4338ca' },
+      'bronze-heritage': { primary: '#78350f', headBg: '#78350f', headFg: '#fef3c7', secBg: '#fef3c7', grandBg: '#78350f', grandFg: '#fef3c7', accent: '#b45309' },
+      'slate-sidebar': { primary: '#0f172a', headBg: '#1e293b', headFg: '#ffffff', secBg: '#f1f5f9', grandBg: '#059669', grandFg: '#ffffff', accent: '#059669' }
+    };
+    const themeColors = themeColorsMap[tpl] || themeColorsMap['executive'];
+
+    const [logoDataUrl, stampDataUrl, wmDataUrl] = await Promise.all([
       fetchImageAsDataUrl('/assets/kkvn_logo.jpg'),
-      fetchImageAsDataUrl(stampImgPath)
+      fetchImageAsDataUrl(stampImgPath),
+      showWatermark ? getTransparentWatermarkDataUrl(wmOpacity) : Promise.resolve(null)
     ]);
 
     let itemsRowsWord = '';
@@ -3451,18 +4451,26 @@ xmlns="http://www.w3.org/TR/REC-html40">
 </style>
 </head>
 <body>
-<div class="WordSection1">
+<div class="WordSection1" style="${tpl === 'japanese-jis' ? 'border:2.25pt double #111827; padding:10pt;' : ''}">
+  ${(showWatermark && wmDataUrl) ? `
+    <!--[if gte vml 1]>
+    <v:shape id="KKVNWatermark" type="#_x0000_t75"
+      style="position:absolute;left:0;text-align:left;margin-left:55pt;margin-top:260pt;width:${wmSizePt}pt;height:${wmHeightPt}pt;z-index:-251658240;mso-position-horizontal:center;mso-position-horizontal-relative:page;mso-position-vertical:center;mso-position-vertical-relative:page">
+      <v:imagedata src="${wmDataUrl}" o:title="KKVN Watermark"/>
+    </v:shape>
+    <![endif]-->
+  ` : ''}
   <!-- TOP HEADER -->
-  <table width="100%" style="margin-bottom:6pt;">
+  <table width="100%" style="margin-bottom:6pt; border-top:3pt solid ${themeColors.primary}; padding-top:4pt;">
     <tr>
       <td width="28%" valign="top">
         ${logoDataUrl ? `<img src="${logoDataUrl}" width="115" height="36" alt="KKVN"><br>` : ''}
         <div style="font-size:10.5pt; margin-top:2pt;">${qNoHtml}</div>
       </td>
       <td width="44%" valign="middle" align="center">
-        <div style="font-size:16pt; font-weight:bold; letter-spacing:0.5pt;">${esc(q.doc_title || '御見積 BÁO GIÁ')}</div>
+        <div style="font-size:16pt; font-weight:bold; letter-spacing:0.5pt; color:${themeColors.primary};">${esc(q.doc_title || '御見積 BÁO GIÁ')}</div>
       </td>
-      <td width="28%" valign="bottom" align="right" style="font-size:10pt; font-weight:bold;">
+      <td width="28%" valign="bottom" align="right" style="font-size:10pt; font-weight:bold; color:#b91c1c;">
         ${esc(formatDateDMY(q.quote_date))}
       </td>
     </tr>
@@ -3508,16 +4516,16 @@ xmlns="http://www.w3.org/TR/REC-html40">
   </table>
 
   <!-- ITEMS TABLE -->
-  <table width="100%" style="border:1.5pt solid #000; font-size:9.5pt;">
+  <table width="100%" style="border:1.5pt solid ${themeColors.primary}; font-size:9.5pt;">
     <thead>
-      <tr style="background:#e8eef7;">
-        <th width="6%" style="border:1pt solid #000; padding:4pt 2pt; text-align:center;">番号<br>STT</th>
-        <th width="42%" style="border:1pt solid #000; padding:4pt 4pt; text-align:center;">明細<br>Chi Tiết</th>
-        <th width="9%" style="border:1pt solid #000; padding:4pt 2pt; text-align:center;">単位<br>Đơn Vị</th>
-        <th width="6%" style="border:1pt solid #000; padding:4pt 2pt; text-align:center;">数<br>SL</th>
-        <th width="12%" style="border:1pt solid #000; padding:4pt 4pt; text-align:center;">単価<br>Đơn giá</th>
-        <th width="13%" style="border:1pt solid #000; padding:4pt 4pt; text-align:center;">金額(VND)<br>Thành Tiền</th>
-        <th width="12%" style="border:1pt solid #000; padding:4pt 2pt; text-align:center;">備考<br>Ghi Chú</th>
+      <tr style="background:${themeColors.headBg}; color:${themeColors.headFg};">
+        <th width="6%" style="border:1pt solid ${themeColors.primary}; padding:4pt 2pt; text-align:center; color:${themeColors.headFg};">番号<br>STT</th>
+        <th width="42%" style="border:1pt solid ${themeColors.primary}; padding:4pt 4pt; text-align:center; color:${themeColors.headFg};">明細<br>Chi Tiết</th>
+        <th width="9%" style="border:1pt solid ${themeColors.primary}; padding:4pt 2pt; text-align:center; color:${themeColors.headFg};">単位<br>Đơn Vị</th>
+        <th width="6%" style="border:1pt solid ${themeColors.primary}; padding:4pt 2pt; text-align:center; color:${themeColors.headFg};">数<br>SL</th>
+        <th width="12%" style="border:1pt solid ${themeColors.primary}; padding:4pt 4pt; text-align:center; color:${themeColors.headFg};">単価<br>Đơn giá</th>
+        <th width="13%" style="border:1pt solid ${themeColors.primary}; padding:4pt 4pt; text-align:center; color:${themeColors.headFg};">金額(VND)<br>Thành Tiền</th>
+        <th width="12%" style="border:1pt solid ${themeColors.primary}; padding:4pt 2pt; text-align:center; color:${themeColors.headFg};">備考<br>Ghi Chú</th>
       </tr>
     </thead>
     <tbody>
@@ -5462,6 +6470,11 @@ xmlns="http://www.w3.org/TR/REC-html40">
     loadQuotationById,
     createNewRevision,
     changeQuoteStatus,
+    setPrintTemplate,
+    togglePrintPicker,
+    togglePrintWatermark,
+    setPrintWatermarkOpacity,
+    setPrintWatermarkSize,
     exportActiveQuoteToPdf,
     exportActiveQuoteToWord,
     exportActiveQuoteToExcel,
