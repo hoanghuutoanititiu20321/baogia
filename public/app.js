@@ -872,6 +872,7 @@ const App = (() => {
     const q = state.activeQuote;
     const showCost = state.permissions.canViewCost;
     const canApprove = state.permissions.canApproveQuote;
+    const canEdit = canUserEditQuote(q);
 
     const statusLabels = {
       draft: 'Bản nháp',
@@ -886,6 +887,22 @@ const App = (() => {
     const serviceCatalog = state.equipment.filter(e => e.category === 'service');
 
     container.innerHTML = `
+      ${!canEdit ? `
+        <div class="alert-box alert-warn" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+          <div>
+            ${q.status === 'approved' ? `
+              <strong>Báo giá đã được phê duyệt (Đã khóa chỉnh sửa):</strong> Hồ sơ <strong>${esc(q.quote_number)}</strong> đã được duyệt nên không thể sửa trực tiếp để đảm bảo tính toàn vẹn dữ liệu. Nếu cần điều chỉnh cho khách hàng, vui lòng tạo <strong>Phiên bản mới (Revision +1)</strong>.
+            ` : `
+              <strong>Chế độ Chỉ xem (Read-only):</strong> Báo giá này do tài khoản <strong>@${esc(q.created_by || 'khác')}</strong> tạo.
+              Theo quy định phân quyền, chỉ <strong>người tạo báo giá</strong> hoặc <strong>Admin</strong> mới có quyền chỉnh sửa nội dung.
+            `}
+          </div>
+          <button class="btn btn-sm btn-navy" onclick="App.createNewRevision(${q.id})">
+            📑 Tạo Phiên Bản Mới (Rev +1)
+          </button>
+        </div>
+      ` : ''}
+
       <div class="card" style="background: linear-gradient(90deg, #f8fafc 0%, #f0fdf4 100%); border-left: 5px solid var(--green);">
         <div class="row-between">
           <div>
@@ -894,11 +911,13 @@ const App = (() => {
                 Báo Giá Chi Tiết: <span style="color:var(--red)">${esc(q.quote_number)}</span>
               </h2>
               <span class="status-pill status-${esc(q.status)}">${statusLabels[q.status] || q.status}</span>
-              ${q.id ? `<span style="font-size:12px;color:var(--muted)">(ID: #${q.id} · Rev ${String(q.revision || 1).padStart(2, '0')})</span>` : '<span class="tag-optional">Chưa lưu DB</span>'}
+              ${q.id ? `<span style="font-size:12px;color:var(--muted)">(ID: #${q.id} · Rev ${String(q.revision || 1).padStart(2, '0')})</span>` : '<span class="tag-optional">Báo giá mới (Chưa lưu)</span>'}
             </div>
             <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">
               Khách hàng: <strong>${esc(q.customer_name)}</strong> · Dự án: <strong>${esc(q.project_name || '—')}</strong>
-              ${q.approved_by ? ` · Duyệt bởi: <strong>${esc(q.approved_by)}</strong>` : ''}
+              · Người tạo: <strong>@${esc(q.created_by || state.currentUser?.username || '—')}</strong>
+              ${q.updated_at ? ` · Cập nhật gần nhất: <strong>${esc(formatDateTimeVN(q.updated_at))}</strong>` : ''}
+              ${q.status === 'approved' && (q.approved_by || q.approver_name) ? ` · Duyệt bởi: <strong style="color:var(--green)">${esc(q.approved_by || q.approver_name)}</strong>` : ''}
             </div>
           </div>
 
@@ -915,15 +934,22 @@ const App = (() => {
               </select>
             </label>
 
-            <button class="btn btn-primary" onclick="App.saveActiveQuotation()">
-              💾 Lưu Báo Giá
-            </button>
+            ${canEdit ? `
+              <button class="btn btn-primary" onclick="App.saveActiveQuotation()">
+                💾 Lưu Báo Giá
+              </button>
+            ` : `
+              <button class="btn" disabled style="opacity:0.65;cursor:not-allowed;"
+                      title="${q.status === 'approved' ? 'Báo giá đã duyệt không được chỉnh sửa trực tiếp' : `Chỉ người tạo (@${esc(q.created_by)}) hoặc Admin mới có quyền chỉnh sửa`}">
+                🔒 ${q.status === 'approved' ? 'Đã duyệt (Khóa sửa)' : 'Chỉ xem'}
+              </button>
+            `}
             ${q.id ? `
               <button class="btn btn-navy" onclick="App.createNewRevision(${q.id})" title="Tạo phiên bản chỉnh sửa mới (-02, -03) giữ nguyên lịch sử giá cũ">
                 📑 Tạo Phiên Bản Mới (Rev +1)
               </button>
             ` : ''}
-            ${q.id && q.status === 'draft' ? `
+            ${q.id && q.status === 'draft' && canEdit ? `
               <button class="btn" onclick="App.changeQuoteStatus(${q.id}, 'pending_approval')">
                 📤 Gửi Duyệt
               </button>
@@ -1405,9 +1431,11 @@ const App = (() => {
           </label>
 
           <div class="row" style="margin-top: 14px; justify-content: flex-end;">
-            <button class="btn btn-primary" onclick="App.saveActiveQuotation()">
-              💾 Lưu Báo Giá Hiện Tại
-            </button>
+            ${canEdit ? `
+              <button class="btn btn-primary" onclick="App.saveActiveQuotation()">
+                💾 Lưu Báo Giá Hiện Tại
+              </button>
+            ` : ''}
             <button class="btn btn-navy" onclick="App.showTab('print')">
               🖨️ Chuyển Sang Bản In / Xuất PDF Chuẩn Mẫu KKVN →
             </button>
@@ -1871,8 +1899,65 @@ const App = (() => {
     toast('Đã khởi tạo mẫu báo giá mới!');
   }
 
+  let pendingConfirmAction = null;
+
+  function canUserEditQuote(q) {
+    if (!q || !q.id) return true; // New unsaved quotation can be created by anyone
+    if (q.status === 'approved') return false; // Approved quotations are locked and cannot be edited
+    if (!state.currentUser) return false;
+    return state.currentUser.role === 'admin' || q.created_by === state.currentUser.username;
+  }
+
+  function formatDateTimeVN(dtStr) {
+    if (!dtStr) return '—';
+    const parts = String(dtStr).trim().split(/[\sT]+/);
+    const dPart = formatDateDMY(parts[0] || '');
+    const tPart = (parts[1] || '').slice(0, 5);
+    return tPart ? `${dPart} ${tPart}` : dPart;
+  }
+
+  function openConfirmModal({ title, messageHtml, okText = 'Xác nhận', isDanger = false, onConfirm }) {
+    pendingConfirmAction = onConfirm;
+    const titleEl = document.getElementById('confirmModalTitle');
+    const msgEl = document.getElementById('confirmModalMessage');
+    const okBtn = document.getElementById('confirmModalOkBtn');
+    if (titleEl) titleEl.textContent = title || '⚠️ Xác Nhận Thao Tác';
+    if (msgEl) msgEl.innerHTML = messageHtml || '';
+    if (okBtn) {
+      okBtn.textContent = okText;
+      okBtn.className = isDanger ? 'btn btn-danger' : 'btn btn-primary';
+      if (isDanger) {
+        okBtn.style.background = 'var(--red)';
+        okBtn.style.color = '#fff';
+        okBtn.style.borderColor = 'var(--red)';
+      } else {
+        okBtn.style.background = '';
+        okBtn.style.color = '';
+        okBtn.style.borderColor = '';
+      }
+    }
+    document.getElementById('confirmActionModal')?.classList.remove('hidden');
+  }
+
+  function closeConfirmModal() {
+    pendingConfirmAction = null;
+    document.getElementById('confirmActionModal')?.classList.add('hidden');
+  }
+
+  async function executeConfirmedAction() {
+    const fn = pendingConfirmAction;
+    closeConfirmModal();
+    if (typeof fn === 'function') {
+      await fn();
+    }
+  }
+
   async function saveActiveQuotation() {
     if (!state.activeQuote) return;
+    if (!canUserEditQuote(state.activeQuote)) {
+      toast(`Chỉ người tạo (@${state.activeQuote.created_by}) hoặc Admin mới có quyền chỉnh sửa báo giá này.`);
+      return;
+    }
     recalcActiveQuoteTotals();
     const q = state.activeQuote;
     try {
@@ -1924,19 +2009,43 @@ const App = (() => {
     }
   }
 
-  async function changeQuoteStatus(id, status) {
-    try {
-      const updated = await api(`/api/quotations/${id}/status`, {
-        method: 'POST',
-        body: JSON.stringify({ status })
-      });
-      state.activeQuote = updated;
-      await loadBootstrap();
-      renderAll();
-      toast(`Đã cập nhật trạng thái báo giá ${updated.quote_number}!`);
-    } catch (err) {
-      toast('Lỗi: ' + err.message);
-    }
+  function changeQuoteStatus(id, status) {
+    const target = state.quotations.find(q => q.id === id) || state.activeQuote;
+    const qNum = target ? target.quote_number : `#${id}`;
+    const cName = target ? target.customer_name : '';
+    const totalStr = target ? fmtVnd(target.total_after_tax) + ' VND' : '';
+
+    const isApprove = status === 'approved';
+    const title = isApprove ? '✅ Xác Nhận Phê Duyệt Báo Giá' : '📤 Xác Nhận Gửi Duyệt Báo Giá';
+    const actionLabel = isApprove ? 'PHÊ DUYỆT' : 'GỬI DUYỆT';
+
+    openConfirmModal({
+      title,
+      okText: isApprove ? '✅ Xác nhận Phê duyệt' : '📤 Xác nhận Gửi duyệt',
+      isDanger: false,
+      messageHtml: `
+        Bạn có chắc chắn muốn <strong>${actionLabel}</strong> hồ sơ báo giá này không?
+        <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;">
+          <div>• Số báo giá: <strong style="color:var(--navy)">${esc(qNum)}</strong></div>
+          <div>• Khách hàng: <strong>${esc(cName)}</strong></div>
+          <div>• Tổng cộng sau thuế: <strong style="color:var(--green)">${esc(totalStr)}</strong></div>
+        </div>
+      `,
+      onConfirm: async () => {
+        try {
+          const updated = await api(`/api/quotations/${id}/status`, {
+            method: 'POST',
+            body: JSON.stringify({ status })
+          });
+          state.activeQuote = updated;
+          await loadBootstrap();
+          renderAll();
+          toast(`Đã cập nhật trạng thái báo giá ${updated.quote_number} thành công!`);
+        } catch (err) {
+          toast('Lỗi: ' + err.message);
+        }
+      }
+    });
   }
 
   // ===========================================================================
@@ -2331,24 +2440,31 @@ const App = (() => {
           </div>
         </div>
 
+
         <div class="table-wrap">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Số Báo Giá</th>
-                <th>Ngày BG</th>
+                <th style="width:105px;">Số Báo Giá</th>
+                <th style="width:88px;">Ngày BG</th>
                 <th>Khách Hàng & Dự Án</th>
-                <th>Người Đảm Trách</th>
-                ${showCost ? '<th class="r cost-col">Tổng Giá Cost</th>' : ''}
-                <th class="r">Tổng Trước Thuế</th>
-                <th class="c">VAT</th>
-                <th class="r">Tổng Sau Thuế</th>
-                <th class="c">Trạng Thái</th>
-                <th class="c">Thao Tác</th>
+                <th style="width:165px;">Người Tạo & Đảm Trách</th>
+                <th class="c" style="width:86px;">Cập Nhật</th>
+                ${showCost ? '<th class="r cost-col" style="width:125px;">Tổng Giá Cost</th>' : ''}
+                <th class="r" style="width:125px;">Tổng Trước Thuế</th>
+                <th class="c" style="width:52px;">VAT</th>
+                <th class="r" style="width:130px;">Tổng Sau Thuế</th>
+                <th class="c" style="width:92px;">Trạng Thái</th>
+                <th class="c" style="width:142px;">Thao Tác</th>
               </tr>
             </thead>
             <tbody>
-              ${filtered.map(q => `
+              ${filtered.map(q => {
+                const canEditRow = canUserEditQuote(q);
+                const viewTooltip = q.status === 'approved'
+                  ? 'Báo giá Đã duyệt (Khóa chỉnh sửa - Nhấn để xem chi tiết)'
+                  : `Báo giá do @${esc(q.created_by)} tạo (Chế độ Chỉ xem)`;
+                return `
                 <tr>
                   <td>
                     <strong style="color:var(--navy)">${esc(q.quote_number)}</strong>
@@ -2360,8 +2476,17 @@ const App = (() => {
                     <div style="font-size:12px;color:var(--muted)">${esc(q.project_name || q.install_location || '—')}</div>
                   </td>
                   <td>
-                    ${esc(q.pic_name)}
-                    <div style="font-size:11px;color:var(--muted)">Duyệt: ${esc(q.approver_name)}</div>
+                    <div><strong>${esc(q.pic_name)}</strong></div>
+                    ${q.status === 'approved' ? `<div style="font-size:11px;color:var(--green);font-weight:600;">✓ Duyệt: ${esc(q.approved_by || q.approver_name)}</div>` : ''}
+                  </td>
+                  <td class="c" style="font-size:11.5px;line-height:1.3;padding:6px 6px;">
+                    ${(() => {
+                      const raw = String(q.updated_at || q.created_at || '').trim().split(/[\sT]+/);
+                      const d = formatDateDMY(raw[0] || '');
+                      const t = (raw[1] || '').slice(0, 5);
+                      return `<div style="font-weight:600;color:#334155;">${esc(d)}</div>` +
+                             (t ? `<div style="font-size:11px;color:var(--muted);">${esc(t)}</div>` : '');
+                    })()}
                   </td>
                   ${showCost ? `<td class="r cost-col">${fmtVnd(q.subtotal_cost)}</td>` : ''}
                   <td class="r"><strong>${fmtVnd(q.subtotal_before_tax)}</strong></td>
@@ -2371,20 +2496,29 @@ const App = (() => {
                     <span class="status-pill status-${esc(q.status)}">${statusLabels[q.status] || q.status}</span>
                   </td>
                   <td class="c">
-                    <div class="row" style="justify-content:center;gap:4px;flex-wrap:nowrap;">
-                      <button class="btn btn-sm btn-navy" onclick="App.openQuoteToTab(${q.id}, 'flow2')">✏️ Sửa</button>
-                      <button class="btn btn-sm" onclick="App.openQuoteToTab(${q.id}, 'print')">🖨️ In PDF</button>
-                      <button class="btn btn-sm" onclick="App.createNewRevision(${q.id})" title="Nhân bản thành phiên bản tiếp theo">📑 +Rev</button>
+                    <div class="action-group-compact">
+                      ${canEditRow ? `
+                        <button class="btn btn-icon btn-navy" onclick="App.openQuoteToTab(${q.id}, 'flow2')" title="Chỉnh sửa báo giá">
+                          ✏️
+                        </button>
+                      ` : `
+                        <button class="btn btn-icon" onclick="App.openQuoteToTab(${q.id}, 'flow2')" title="${esc(viewTooltip)}">
+                          👁️
+                        </button>
+                      `}
+                      <button class="btn btn-icon" onclick="App.openQuoteToTab(${q.id}, 'print')" title="Xem bản in / Xuất PDF">🖨️</button>
+                      <button class="btn btn-icon" onclick="App.createNewRevision(${q.id})" title="Tạo phiên bản mới (+Rev)">📑</button>
                       ${canApprove && q.status !== 'approved' ? `
-                        <button class="btn btn-sm btn-primary" onclick="App.changeQuoteStatus(${q.id}, 'approved')">✅ Duyệt</button>
+                        <button class="btn btn-icon btn-primary" onclick="App.changeQuoteStatus(${q.id}, 'approved')" title="Phê duyệt báo giá">✅</button>
                       ` : ''}
                       ${canDelete ? `
-                        <button class="btn btn-sm btn-danger" onclick="App.deleteQuote(${q.id})">🗑</button>
+                        <button class="btn btn-icon btn-danger" onclick="App.deleteQuote(${q.id})" title="Xóa báo giá">🗑</button>
                       ` : ''}
                     </div>
                   </td>
                 </tr>
-              `).join('')}
+              `;
+              }).join('')}
             </tbody>
           </table>
         </div>
@@ -2403,16 +2537,36 @@ const App = (() => {
     showTab(tab);
   }
 
-  async function deleteQuote(id) {
-    if (!confirm('Bạn có chắc chắn muốn xóa báo giá này?')) return;
-    try {
-      await api(`/api/quotations/${id}`, { method: 'DELETE' });
-      await loadBootstrap();
-      renderAll();
-      toast('Đã xóa báo giá.');
-    } catch (err) {
-      toast('Lỗi xóa: ' + err.message);
-    }
+  function deleteQuote(id) {
+    const target = state.quotations.find(q => q.id === id);
+    const qNum = target ? target.quote_number : `#${id}`;
+    const cName = target ? target.customer_name : '';
+    const creator = target ? target.created_by : '';
+
+    openConfirmModal({
+      title: '⚠️ Xác Nhận Xóa Hồ Sơ Báo Giá',
+      okText: '🗑 Xác nhận Xóa vĩnh viễn',
+      isDanger: true,
+      messageHtml: `
+        Bạn có chắc chắn muốn <strong style="color:var(--red)">XÓA VĨNH VIỄN</strong> hồ sơ báo giá này khỏi hệ thống?
+        <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;margin:10px 0;font-size:13px;">
+          <div>• Số báo giá: <strong style="color:var(--red)">${esc(qNum)}</strong></div>
+          <div>• Khách hàng: <strong>${esc(cName)}</strong></div>
+          <div>• Người tạo: <strong>@${esc(creator)}</strong></div>
+        </div>
+        <span style="color:var(--red);font-size:12.5px;font-weight:700;">⚠️ Lưu ý: Hành động này không thể hoàn tác sau khi xóa!</span>
+      `,
+      onConfirm: async () => {
+        try {
+          await api(`/api/quotations/${id}`, { method: 'DELETE' });
+          await loadBootstrap();
+          renderAll();
+          toast(`Đã xóa báo giá ${qNum}.`);
+        } catch (err) {
+          toast('Lỗi xóa: ' + err.message);
+        }
+      }
+    });
   }
 
   // ===========================================================================
@@ -3290,6 +3444,8 @@ const App = (() => {
     openChangePasswordModal,
     closeChangePasswordModal,
     submitChangePassword,
+    closeConfirmModal,
+    executeConfirmedAction,
     showTab,
     setF1Product,
     setF1Model,

@@ -336,7 +336,7 @@
     <!-- NAVIGATION TABS -->
     <nav class="nav-bar">
       <button class="nav-tab active" id="tabBtn-flow1" onclick="App.showTab('flow1')">
-        <span>⚡ 1. Báo Giá Cơ Bản</span>
+        <span>📝 1. Báo Giá Cơ Bản</span>
       </button>
       <button class="nav-tab" id="tabBtn-flow2" onclick="App.showTab('flow2')">
         <span>📝 2. Báo Giá Chi Tiết</span>
@@ -412,6 +412,23 @@
   <!-- MODAL: CREATE / EDIT USER & GRANULAR PERMISSIONS -->
   <div id="userPermModal" class="modal-backdrop hidden">
     <div class="modal-box" id="userPermModalBody"></div>
+  </div>
+
+  <!-- MODAL: CONFIRMATION DIALOG FOR APPROVE / DELETE / CRITICAL ACTIONS -->
+  <div id="confirmActionModal" class="modal-backdrop hidden">
+    <div class="modal-box" style="max-width: 460px;">
+      <div class="card-header">
+        <h3 class="card-title" id="confirmModalTitle">⚠️ Xác Nhận Thao Tác</h3>
+        <button class="btn btn-sm" onclick="App.closeConfirmModal()">✕</button>
+      </div>
+      <div id="confirmModalMessage"
+        style="font-size: 14px; color: var(--text); line-height: 1.55; margin-bottom: 18px;"></div>
+      <div class="row" style="justify-content: flex-end; gap: 10px;">
+        <button type="button" class="btn" onclick="App.closeConfirmModal()">Hủy bỏ</button>
+        <button type="button" class="btn btn-primary" id="confirmModalOkBtn" onclick="App.executeConfirmedAction()">Xác
+          nhận</button>
+      </div>
+    </div>
   </div>
 
   <div class="toast-container" id="toastContainer"></div>

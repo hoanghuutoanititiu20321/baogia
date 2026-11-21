@@ -457,7 +457,8 @@ const server = http.createServer(async (req, res) => {
             selected_product_line, selected_model_code,
             subtotal_cost, subtotal_base, subtotal_before_tax,
             vat_percent, vat_amount, total_after_tax,
-            sections_json, terms_json, internal_notes, created_by
+            sections_json, terms_json, internal_notes, created_by,
+            created_at, updated_at
           ) VALUES (
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?,
@@ -468,7 +469,8 @@ const server = http.createServer(async (req, res) => {
             ?, ?,
             ?, ?, ?,
             ?, ?, ?,
-            ?, ?, ?, ?
+            ?, ?, ?, ?,
+            datetime('now', 'localtime'), datetime('now', 'localtime')
           )
         `);
 
@@ -522,6 +524,22 @@ const server = http.createServer(async (req, res) => {
         const existing = db.prepare('SELECT * FROM quotations WHERE id = ?').get(id);
         if (!existing) return sendJson(res, 404, { error: 'Không tìm thấy báo giá' });
 
+        // Rule 1: Approved quotations are locked and cannot be edited directly
+        if (existing.status === 'approved') {
+          return sendJson(res, 403, {
+            error: `Báo giá ${existing.quote_number} đã được phê duyệt nên đã khóa chỉnh sửa. Vui lòng tạo Phiên bản mới (Revision +1) để điều chỉnh.`
+          });
+        }
+
+        // Rule 2: Only the creator of the quotation or an Admin can edit it
+        const isCreator = existing.created_by === currentUser.username;
+        const isAdmin = currentUser.role === 'admin';
+        if (!isCreator && !isAdmin) {
+          return sendJson(res, 403, {
+            error: `Chỉ người tạo báo giá (@${existing.created_by}) hoặc Admin mới có quyền chỉnh sửa báo giá này.`
+          });
+        }
+
         const body = await readJsonBody(req);
         const subtotalCost = (body.subtotal_cost !== null && body.subtotal_cost !== undefined && showCost)
           ? Number(body.subtotal_cost)
@@ -564,7 +582,7 @@ const server = http.createServer(async (req, res) => {
             sections_json = ?,
             terms_json = ?,
             internal_notes = ?,
-            updated_at = datetime('now')
+            updated_at = datetime('now', 'localtime')
           WHERE id = ?
         `).run(
           body.quote_number || existing.quote_number,
@@ -643,7 +661,8 @@ const server = http.createServer(async (req, res) => {
             selected_product_line, selected_model_code,
             subtotal_cost, subtotal_base, subtotal_before_tax,
             vat_percent, vat_amount, total_after_tax,
-            sections_json, terms_json, internal_notes, created_by
+            sections_json, terms_json, internal_notes, created_by,
+            created_at, updated_at
           ) VALUES (
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?, 'draft',
@@ -654,7 +673,8 @@ const server = http.createServer(async (req, res) => {
             ?, ?,
             ?, ?, ?,
             ?, ?, ?,
-            ?, ?, ?, ?
+            ?, ?, ?, ?,
+            datetime('now', 'localtime'), datetime('now', 'localtime')
           )
         `).run(
           nextQuoteNumber, orig.base_code, nextRev, orig.id, today,
@@ -684,11 +704,12 @@ const server = http.createServer(async (req, res) => {
         if ((nextStatus === 'approved' || nextStatus === 'rejected') && !perms.canApproveQuote) {
           return sendJson(res, 403, { error: 'Tài khoản của bạn không có quyền phê duyệt báo giá.' });
         }
-        const approvedBy = nextStatus === 'approved' ? currentUser.full_name : null;
-        const approvedAt = nextStatus === 'approved' ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null;
+        const isApproving = nextStatus === 'approved';
+        const approvedBy = isApproving ? currentUser.full_name : null;
+        const approvedAt = isApproving ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null;
         db.prepare(`
           UPDATE quotations
-          SET status = ?, approved_by = COALESCE(?, approved_by), approved_at = COALESCE(?, approved_at), updated_at = datetime('now')
+          SET status = ?, approved_by = ?, approved_at = ?, updated_at = datetime('now', 'localtime')
           WHERE id = ?
         `).run(nextStatus, approvedBy, approvedAt, id);
         const updated = db.prepare('SELECT * FROM quotations WHERE id = ?').get(id);
