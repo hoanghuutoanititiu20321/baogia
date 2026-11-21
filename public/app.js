@@ -339,6 +339,39 @@ const App = (() => {
     return list.find(m => String(m.model_code) === String(state.f1.modelCode)) || list[0] || state.models[0];
   }
 
+  function buildF1RecommendedHtml() {
+    const reqFlow = parseFloat(state.f1.flowSearch);
+    if (isNaN(reqFlow) || reqFlow <= 0) return '';
+    const productLines = [...new Set(state.models.map(m => m.product_line))];
+    const recommendedModels = [];
+    productLines.forEach(pl => {
+      const match = state.models
+        .filter(m => m.product_line === pl && m.flow_rate >= reqFlow)
+        .sort((a, b) => a.flow_rate - b.flow_rate)[0];
+      if (match) recommendedModels.push(match);
+    });
+    if (recommendedModels.length === 0) {
+      return `
+        <div class="alert-box alert-warn">
+          <strong>Không tìm thấy Model tiêu chuẩn có lưu lượng ≥ ${reqFlow} m³/min (${fmtVnd(reqFlow * 60)} CMH).</strong>
+        </div>
+      `;
+    }
+    return `
+      <div class="alert-box alert-info">
+        <strong>Gợi ý Model đáp ứng lưu lượng ≥ ${reqFlow} m³/min (${fmtVnd(reqFlow * 60)} CMH):</strong>
+        <div class="row" style="margin-top:6px;">
+          ${recommendedModels.map(rm => `
+            <button class="btn btn-sm" onclick="App.selectRecommendedModel('${esc(rm.product_line)}', '${esc(rm.model_code)}')">
+              <strong>${esc(rm.product_line)} - Model ${esc(rm.model_code)}</strong> (${rm.flow_rate} m³/min) · ${fmtVnd(rm.total_base)} đ
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+
   function renderFlow1() {
     const container = document.getElementById('view-flow1');
     if (!container) return;
@@ -353,17 +386,6 @@ const App = (() => {
 
     const showCost = state.permissions.canViewCost;
     const defaultInstruments = state.equipment.filter(e => e.category === 'instrument' && e.is_default_included);
-
-    const reqFlow = parseFloat(state.f1.flowSearch);
-    let recommendedModels = [];
-    if (!isNaN(reqFlow) && reqFlow > 0) {
-      productLines.forEach(pl => {
-        const match = state.models
-          .filter(m => m.product_line === pl && m.flow_rate >= reqFlow)
-          .sort((a, b) => a.flow_rate - b.flow_rate)[0];
-        if (match) recommendedModels.push(match);
-      });
-    }
 
     const lines = cur ? [
       {
@@ -410,10 +432,10 @@ const App = (() => {
           <h2 class="card-title">Tra Cứu Cấu Hình & Báo Giá Cơ Bản</h2>
           <div class="row">
             <button class="btn btn-primary" onclick="App.startDetailedFromF1('tower_bundle')">
-              Chuyển sang Báo Giá Chi Tiết (Gộp 1 Set – Mẫu Taikisha) →
+              Báo Giá Chi Tiết (Gộp 1 Set – Mẫu Taikisha) →
             </button>
             <button class="btn btn-navy" onclick="App.startDetailedFromF1('itemized')">
-              Chuyển sang Báo Giá Chi Tiết (Tách rời từng hạng mục) →
+              Báo Giá Chi Tiết (Tách rời từng hạng mục) →
             </button>
           </div>
         </div>
@@ -435,27 +457,16 @@ const App = (() => {
 
           <label class="field">
             Tra nhanh theo Lưu lượng cần xử lý (m³/min)
-            <input type="number" placeholder="VD: 55 hoặc 130..." value="${esc(state.f1.flowSearch)}" oninput="App.setF1FlowSearch(this.value)">
+            <input type="number" id="f1FlowSearchInput" placeholder="VD: 55 hoặc 130..." value="${esc(state.f1.flowSearch)}" oninput="App.setF1FlowSearch(this.value)">
           </label>
 
           <label class="field">
-            Tên dự án / Khách hàng (tùy chọn khi chuyển sang chi tiết)
+            Tên dự án / Khách hàng
             <input type="text" placeholder="VD: Murata - Biên Hòa" value="${esc(state.f1.projectName)}" oninput="App.setF1Project(this.value)">
           </label>
         </div>
 
-        ${recommendedModels.length > 0 ? `
-          <div class="alert-box alert-info">
-            <strong>Gợi ý Model đáp ứng lưu lượng ≥ ${reqFlow} m³/min (${fmtVnd(reqFlow * 60)} CMH):</strong>
-            <div class="row" style="margin-top:6px;">
-              ${recommendedModels.map(rm => `
-                <button class="btn btn-sm" onclick="App.selectRecommendedModel('${esc(rm.product_line)}', '${esc(rm.model_code)}')">
-                  <strong>${esc(rm.product_line)} - Model ${esc(rm.model_code)}</strong> (${rm.flow_rate} m³/min) · ${fmtVnd(rm.total_base)} đ
-                </button>
-              `).join('')}
-            </div>
-          </div>
-        ` : ''}
+        <div id="f1RecommendedBox">${buildF1RecommendedHtml()}</div>
 
         ${cur ? `
           <div class="kpi-grid">
@@ -513,7 +524,7 @@ const App = (() => {
               <li><strong>Thiết bị đi kèm mặc định (Đã tính trong giá Hệ tháp):</strong>
                 ${defaultInstruments.map(d => `<span class="tag-included">${esc(d.name_vi)} x ${d.default_qty}</span>`).join(' ')}
               </li>
-              <li><strong>Chưa bao gồm:</strong> Chi phí vận chuyển và chi phí lắp đặt tại công trình (sẽ được bổ sung tại <em>Luồng 2 – Báo giá chi tiết</em>).</li>
+              <li><strong>Chưa bao gồm:</strong> Chi phí vận chuyển và chi phí lắp đặt tại công trình (sẽ được bổ sung tại <em>Báo giá chi tiết</em>).</li>
             </ul>
           </div>
         ` : ''}
@@ -567,6 +578,7 @@ const App = (() => {
     `;
   }
 
+
   function setF1Product(prod) {
     const prevModel = getSelectedF1Model();
     const prevFlow = prevModel ? Number(prevModel.flow_rate) : null;
@@ -595,7 +607,12 @@ const App = (() => {
 
   function setF1FlowSearch(val) {
     state.f1.flowSearch = val;
-    renderFlow1();
+    const recBox = document.getElementById('f1RecommendedBox');
+    if (recBox) {
+      recBox.innerHTML = buildF1RecommendedHtml();
+    } else {
+      renderFlow1();
+    }
   }
 
   function setF1Project(val) {
@@ -1694,6 +1711,7 @@ const App = (() => {
       </div>
     `;
   }
+
 
   function updateQField(field, value) {
     if (!state.activeQuote) return;
@@ -2918,8 +2936,17 @@ const App = (() => {
                 📨 Đánh dấu Đã gửi KH
               </button>
             ` : ''}
-            <button class="btn btn-primary" onclick="window.print()">
-              🖨️ In / Lưu File PDF (Chuẩn A4)
+            <button class="btn" id="btnExportPdfDirect" style="background:#dc2626;color:#fff;border-color:#b91c1c;" onclick="App.exportActiveQuoteToPdf(this)" title="Tải trực tiếp file PDF (.pdf) chuẩn khổ A4 về máy (Không mở hộp thoại máy in)">
+              📄 Xuất PDF (.pdf)
+            </button>
+            <button class="btn" style="background:#1e40af;color:#fff;border-color:#1e3a8a;" onclick="App.exportActiveQuoteToWord()" title="Tải về file Word (.doc) chuẩn bố cục A4 KKVN để chỉnh sửa trong Microsoft Word">
+              📝 Xuất Word (.doc)
+            </button>
+            <button class="btn" style="background:#15803d;color:#fff;border-color:#166534;" onclick="App.exportActiveQuoteToExcel()" title="Tải về file Excel (.xlsx) chuẩn bảng tính báo giá KKVN">
+              📊 Xuất Excel (.xlsx)
+            </button>
+            <button class="btn btn-navy" onclick="window.print()" title="Mở hộp thoại kết nối máy in để in giấy trực tiếp">
+              🖨️ In
             </button>
           </div>
         </div>
@@ -3112,6 +3139,956 @@ const App = (() => {
   }
 
   // ===========================================================================
+  // XUẤT FILE WORD (.doc) & EXCEL (.xlsx) CHUẨN BIỂU MẪU BÁO GIÁ KKVN
+  // ===========================================================================
+  async function fetchImageAsDataUrl(url) {
+    if (!url) return null;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  function makeSafeFileName(q, ext) {
+    const qNo = String(q.quote_number || 'BaoGia').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const cust = String(q.customer_name || 'KhachHang')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+      .replace(/[^a-zA-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 32);
+    return `Bao_Gia_${qNo}_${cust || 'KKVN'}.${ext}`;
+  }
+
+  function triggerBlobDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 300);
+  }
+
+  function ensureHtml2PdfLoaded() {
+    if (typeof window.html2pdf === 'function') return Promise.resolve(window.html2pdf);
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+      s.onload = () => resolve(window.html2pdf);
+      s.onerror = () => reject(new Error('Không thể tải thư viện tạo PDF.'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function exportActiveQuoteToPdf(btnEl = null) {
+    const q = state.activeQuote;
+    if (!q) {
+      toast('Chưa có báo giá nào đang mở để xuất PDF.');
+      return;
+    }
+
+    const sheetEl = document.querySelector('#view-print .kkvn-sheet');
+    if (!sheetEl) {
+      renderPrintView();
+    }
+    const targetSheet = document.querySelector('#view-print .kkvn-sheet');
+    if (!targetSheet) {
+      toast('Không tìm thấy khung biểu mẫu báo giá A4.');
+      return;
+    }
+
+    const origText = btnEl ? btnEl.innerHTML : '';
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.innerHTML = '⏳ Đang xuất PDF...';
+    }
+
+    const savedScrollX = window.scrollX || window.pageXOffset || 0;
+    const savedScrollY = window.scrollY || window.pageYOffset || 0;
+
+    try {
+      await ensureHtml2PdfLoaded();
+
+      // Tạo bản sao .kkvn-sheet với width: 100% để khớp chính xác trong khung 210mm của html2pdf (không bị cắt viền phải/trái)
+      const clone = targetSheet.cloneNode(true);
+      clone.style.zoom = '1';
+      clone.style.width = '100%';
+      clone.style.maxWidth = '100%';
+      clone.style.minHeight = 'auto';
+      clone.style.margin = '0';
+      clone.style.padding = '8mm 10mm';
+      clone.style.boxShadow = 'none';
+      clone.style.boxSizing = 'border-box';
+      clone.style.background = '#ffffff';
+
+      // Nhúng ảnh Logo & Con dấu sang Base64 trên bản sao để html2canvas vẽ đầy đủ 100%
+      const imgs = Array.from(clone.querySelectorAll('img'));
+      await Promise.all(imgs.map(async (img) => {
+        const src = img.getAttribute('src');
+        if (src && !src.startsWith('data:')) {
+          const dataUrl = await fetchImageAsDataUrl(src);
+          if (dataUrl) img.setAttribute('src', dataUrl);
+        }
+      }));
+
+      // Đưa scroll về (0, 0) trong lúc chụp canvas để tránh html2canvas bị lệch tọa độ khi trang đang cuộn
+      window.scrollTo(0, 0);
+
+      const filename = makeSafeFileName(q, 'pdf');
+      const opt = {
+        margin: 0,
+        filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2.5,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false
+        },
+        jsPDF: {
+          unit: 'mm',
+          format: 'a4',
+          orientation: 'portrait'
+        }
+      };
+
+      const worker = window.html2pdf().set(opt).from(clone).toCanvas();
+      await worker;
+
+      // Chuẩn hóa tỷ lệ khung Canvas A4 để toàn bộ tờ báo giá (kể cả khung Duyệt giá báo & Mộc đỏ ở đáy)
+      // vừa khít 1 trang A4 mà không bị cắt ngang viền dưới
+      const rawCanvas = worker.prop.canvas;
+      if (rawCanvas && rawCanvas.width > 0 && rawCanvas.height > 0) {
+        const a4Ratio = 297 / 210;
+        const maxSinglePageH = Math.floor(rawCanvas.width * a4Ratio);
+        if (rawCanvas.height > maxSinglePageH && rawCanvas.height <= maxSinglePageH * 1.28) {
+          const normCanvas = document.createElement('canvas');
+          normCanvas.height = rawCanvas.height + 16;
+          normCanvas.width = Math.ceil(normCanvas.height / a4Ratio);
+          const ctx = normCanvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, normCanvas.width, normCanvas.height);
+          const offsetX = Math.round((normCanvas.width - rawCanvas.width) / 2);
+          ctx.drawImage(rawCanvas, offsetX, 8);
+          worker.prop.canvas = normCanvas;
+        }
+      }
+
+      await worker.save();
+      toast(`Đã tải xuống file PDF: ${filename}`);
+    } catch (err) {
+      toast('Lỗi khi xuất file PDF: ' + (err.message || err));
+    } finally {
+      window.scrollTo(savedScrollX, savedScrollY);
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = origText || '📄 Xuất PDF (.pdf)';
+      }
+    }
+  }
+
+  async function exportActiveQuoteToWord() {
+    const q = state.activeQuote;
+    if (!q) {
+      toast('Chưa có báo giá nào đang mở để xuất Word.');
+      return;
+    }
+    recalcActiveQuoteTotals();
+    const t = q.terms || {};
+
+    const stampImgPath = q.stamp_type === 'tayninh'
+      ? '/assets/stamp_tayninh.png'
+      : q.stamp_type === 'longan'
+        ? '/assets/stamp_longan.png'
+        : null;
+
+    const [logoDataUrl, stampDataUrl] = await Promise.all([
+      fetchImageAsDataUrl('/assets/kkvn_logo.jpg'),
+      fetchImageAsDataUrl(stampImgPath)
+    ]);
+
+    let itemsRowsWord = '';
+    (q.sections || []).forEach(sec => {
+      if (sec.title && sec.title.trim()) {
+        itemsRowsWord += `
+          <tr>
+            <td colspan="7" style="border:1pt solid #000; padding:4pt 6pt; font-weight:bold; background:#f2f4f8;">
+              ${esc(sec.title)}
+            </td>
+          </tr>
+        `;
+      }
+      (sec.items || []).forEach(it => {
+        itemsRowsWord += `
+          <tr>
+            <td style="border:1pt solid #000; padding:3.5pt 4pt; text-align:center; font-weight:bold;">${esc(it.stt)}</td>
+            <td style="border:1pt solid #000; padding:3.5pt 6pt; font-weight:bold;">${esc(it.name_jp ? it.name_jp + ' ' : '')}${esc(it.name_vi)}</td>
+            <td style="border:1pt solid #000; padding:3.5pt 4pt; text-align:center;">${esc(it.unit)}</td>
+            <td style="border:1pt solid #000; padding:3.5pt 4pt; text-align:center;">${esc(it.quantity)}</td>
+            <td style="border:1pt solid #000; padding:3.5pt 6pt; text-align:right;">${fmtPdfNum(it.unit_price)}</td>
+            <td style="border:1pt solid #000; padding:3.5pt 6pt; text-align:right; font-weight:bold;">${fmtPdfNum(it.total_price)}</td>
+            <td style="border:1pt solid #000; padding:3.5pt 4pt; text-align:center; font-weight:bold;">${esc(it.remark || '')}</td>
+          </tr>
+        `;
+
+        if (it.specs_text && it.specs_text.trim()) {
+          itemsRowsWord += `
+            <tr>
+              <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 4pt;"></td>
+              <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 6pt 2pt 16pt;">${esc(it.specs_text)}</td>
+              <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+              <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+              <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+              <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+              <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+            </tr>
+          `;
+        }
+
+        if (it.sub_lines && it.sub_lines.length > 0) {
+          it.sub_lines.forEach(sl => {
+            const padLeft = sl.text && sl.text.startsWith('   +') ? '22pt' : '10pt';
+            itemsRowsWord += `
+              <tr>
+                <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 4pt;"></td>
+                <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 6pt 2pt ${padLeft};">
+                  <span>${esc((sl.text || '').trim())}</span>
+                  ${sl.right_text ? `<span style="float:right; font-weight:bold;"> &nbsp;&nbsp; ${esc(sl.right_text)}</span>` : ''}
+                </td>
+                <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+                <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+                <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+                <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+                <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 4pt; text-align:center; font-weight:bold;">${esc(sl.remark || '')}</td>
+              </tr>
+            `;
+          });
+        }
+      });
+
+      if (sec.showSubtotal) {
+        itemsRowsWord += `
+          <tr>
+            <td colspan="5" style="border:1pt solid #000; padding:4pt 8pt; text-align:center; font-weight:bold; background:#f8fafc;">
+              ${esc(sec.subtotalLabel || 'TOTAL')}
+            </td>
+            <td style="border:1pt solid #000; padding:4pt 6pt; text-align:right; font-weight:bold; background:#f8fafc;">
+              ${fmtPdfNum(sec.subtotal)}
+            </td>
+            <td style="border:1pt solid #000; background:#f8fafc;"></td>
+          </tr>
+        `;
+      }
+    });
+
+    const anySecSubtotal = (q.sections || []).some(s => s.showSubtotal);
+    if (!anySecSubtotal) {
+      itemsRowsWord += `
+        <tr>
+          <td colspan="5" style="border:1pt solid #000; padding:4pt 8pt; text-align:center; font-weight:bold; background:#f8fafc;">
+            ${esc(t.total_label_before_tax || 'TOTAL')}
+          </td>
+          <td style="border:1pt solid #000; padding:4pt 6pt; text-align:right; font-weight:bold; background:#f8fafc;">
+            ${fmtPdfNum(q.subtotal_before_tax)}
+          </td>
+          <td style="border:1pt solid #000; background:#f8fafc;"></td>
+        </tr>
+      `;
+    }
+
+    const rawNo = String(q.quote_number || '');
+    const mNo = rawNo.match(/^(\d{4}-\d{3})-(\d{2})$/);
+    const qNoHtml = mNo
+      ? `<strong>${esc(mNo[1])}-<span style="color:#c00000;">${esc(mNo[2])}</span></strong>`
+      : `<strong>${esc(rawNo)}</strong>`;
+
+    const wordHtml = `\ufeff<html xmlns:v="urn:schemas-microsoft-com:vml"
+xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:w="urn:schemas-microsoft-com:office:word"
+xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<title>${esc(q.quote_number)} - ${esc(q.customer_name)}</title>
+<!--[if gte mso 9]>
+<xml>
+  <w:WordDocument>
+    <w:View>Print</w:View>
+    <w:Zoom>100</w:Zoom>
+    <w:DoNotOptimizeForBrowser/>
+  </w:WordDocument>
+</xml>
+<![endif]-->
+<style>
+  @page WordSection1 {
+    size: 210mm 297mm;
+    margin: 10mm 10mm 10mm 10mm;
+  }
+  div.WordSection1 { page: WordSection1; }
+  body {
+    font-family: "Times New Roman", "MS Mincho", serif;
+    font-size: 10pt;
+    color: #000000;
+  }
+  table { border-collapse: collapse; }
+</style>
+</head>
+<body>
+<div class="WordSection1">
+  <!-- TOP HEADER -->
+  <table width="100%" style="margin-bottom:6pt;">
+    <tr>
+      <td width="28%" valign="top">
+        ${logoDataUrl ? `<img src="${logoDataUrl}" width="115" height="36" alt="KKVN"><br>` : ''}
+        <div style="font-size:10.5pt; margin-top:2pt;">${qNoHtml}</div>
+      </td>
+      <td width="44%" valign="middle" align="center">
+        <div style="font-size:16pt; font-weight:bold; letter-spacing:0.5pt;">${esc(q.doc_title || '御見積 BÁO GIÁ')}</div>
+      </td>
+      <td width="28%" valign="bottom" align="right" style="font-size:10pt; font-weight:bold;">
+        ${esc(formatDateDMY(q.quote_date))}
+      </td>
+    </tr>
+  </table>
+
+  <!-- CUSTOMER & COMPANY PARTY INFO -->
+  <table width="100%" style="margin-bottom:8pt;">
+    <tr>
+      <td width="49%" valign="top" style="padding-right:10pt;">
+        <div style="color:#c00000; font-weight:bold; font-size:10.5pt; border-bottom:1.5pt solid #000; padding-bottom:2pt; margin-bottom:4pt;">
+          ${esc(q.customer_name)}
+        </div>
+        <div style="margin-bottom:2pt;"><strong>住所 Địa chỉ:</strong> ${esc(q.customer_address || '')}</div>
+        <div style="margin-bottom:2pt;"><strong>電話番号 Điện thoại:</strong> ${esc(q.customer_phone || '')}</div>
+        <div style="margin-bottom:2pt;"><strong>連絡先 Liên hệ:</strong> ${esc(q.customer_contact || '')}</div>
+      </td>
+      <td width="2%"></td>
+      <td width="49%" valign="top" style="padding-left:10pt;">
+        <div style="color:#1f3864; font-weight:bold; font-size:11pt; border-bottom:1.5pt solid #000; padding-bottom:2pt; margin-bottom:4pt;">
+          KYOWA KAKO VIET NAM CO., LTD
+        </div>
+        <div style="margin-bottom:2pt;"><strong>住所 Địa chỉ:</strong> ${esc(q.kkvn_address || '')}</div>
+        <div style="margin-bottom:2pt;"><strong>承認者 Người duyệt:</strong> <em><strong>${esc(q.approver_name)} ${esc(q.approver_phone)}</strong></em></div>
+        <div style="margin-bottom:2pt;"><strong>担当者 Người đảm trách:</strong> <em><strong>${esc(q.pic_name)} ${esc(q.pic_phone)}</strong></em></div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- PROJECT META -->
+  <table width="100%" style="margin-bottom:8pt; font-size:10pt;">
+    <tr>
+      <td width="24%" style="padding:1.5pt 0;"><strong>プロジェクト Dự Án :</strong></td>
+      <td width="76%" style="padding:1.5pt 0;"><strong>${esc(q.project_name || '')}</strong></td>
+    </tr>
+    <tr>
+      <td style="padding:1.5pt 0;"><strong>設置先 Nơi lắp đặt :</strong></td>
+      <td style="padding:1.5pt 0;">${esc(q.install_location || '')}</td>
+    </tr>
+    <tr>
+      <td style="padding:1.5pt 0;"><strong>納期 Thời gian đặt hàng :</strong></td>
+      <td style="padding:1.5pt 0;"><strong>${esc(q.lead_time_days || 180)}</strong> &nbsp; 日間 ${esc(q.lead_time_note || 'Ngày (kể từ ngày nhận cọc)')}</td>
+    </tr>
+  </table>
+
+  <!-- ITEMS TABLE -->
+  <table width="100%" style="border:1.5pt solid #000; font-size:9.5pt;">
+    <thead>
+      <tr style="background:#e8eef7;">
+        <th width="6%" style="border:1pt solid #000; padding:4pt 2pt; text-align:center;">番号<br>STT</th>
+        <th width="42%" style="border:1pt solid #000; padding:4pt 4pt; text-align:center;">明細<br>Chi Tiết</th>
+        <th width="9%" style="border:1pt solid #000; padding:4pt 2pt; text-align:center;">単位<br>Đơn Vị</th>
+        <th width="6%" style="border:1pt solid #000; padding:4pt 2pt; text-align:center;">数<br>SL</th>
+        <th width="12%" style="border:1pt solid #000; padding:4pt 4pt; text-align:center;">単価<br>Đơn giá</th>
+        <th width="13%" style="border:1pt solid #000; padding:4pt 4pt; text-align:center;">金額(VND)<br>Thành Tiền</th>
+        <th width="12%" style="border:1pt solid #000; padding:4pt 2pt; text-align:center;">備考<br>Ghi Chú</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemsRowsWord}
+    </tbody>
+  </table>
+
+  <!-- SUMMARY TOTALS -->
+  <table width="100%" style="margin-bottom:10pt; font-size:10pt;">
+    ${anySecSubtotal ? `
+      <tr>
+        <td width="75%" style="border:1pt solid #000; padding:4pt 8pt; text-align:center; font-weight:bold;">
+          ${esc(t.total_label_before_tax || 'Total (A) + (B) - Before TAX')}
+        </td>
+        <td width="13%" style="border:1pt solid #000; padding:4pt 6pt; text-align:right; font-weight:bold;">
+          ${fmtPdfNum(q.subtotal_before_tax)}
+        </td>
+        <td width="12%" style="border:1pt solid #000;"></td>
+      </tr>
+    ` : ''}
+    <tr>
+      <td width="75%" style="border:1pt solid #000; padding:4pt 8pt; text-align:center; font-weight:bold;">
+        TAX VAT &nbsp;&nbsp;&nbsp; ${Number(q.vat_percent || 0)}%
+      </td>
+      <td width="13%" style="border:1pt solid #000; padding:4pt 6pt; text-align:right; font-weight:bold;">
+        ${q.vat_amount > 0 ? fmtPdfNum(q.vat_amount) : '-'}
+      </td>
+      <td width="12%" style="border:1pt solid #000;"></td>
+    </tr>
+    <tr>
+      <td width="75%" style="border:1pt solid #000; padding:4pt 8pt; text-align:center; font-weight:bold; background:#f0fdf4;">
+        Total - After TAX
+      </td>
+      <td width="13%" style="border:1pt solid #000; padding:4pt 6pt; text-align:right; font-weight:bold; font-size:10.5pt; background:#f0fdf4;">
+        ${fmtPdfNum(q.total_after_tax)}
+      </td>
+      <td width="12%" style="border:1pt solid #000; background:#f0fdf4;"></td>
+    </tr>
+  </table>
+
+  <!-- FOOTER NOTES & STAMP -->
+  <table width="100%" style="font-size:9.5pt;">
+    <tr>
+      <td width="64%" valign="top">
+        <div style="font-weight:bold; margin-bottom:4pt;">記 Ghi chú</div>
+        <div style="margin-bottom:3pt;">
+          <strong>①</strong> Thời hạn báo giá : <strong>${esc(t.validity_days ?? 30)}</strong> ngày<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;見積の有効期限 : <strong>${esc(t.validity_days ?? 30)}</strong> 日間
+        </div>
+        <div style="margin-bottom:3pt;">
+          <strong>②</strong> Địa điểm giao hàng : ${esc(t.delivery_place_vi || 'Tại chân công trình')}<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;Delivery先 : ${esc(t.delivery_place_jp || '工事現場で引き渡し')}
+        </div>
+        <div style="margin-bottom:3pt;">
+          <strong>③</strong> Thời gian giao hàng : <strong>${esc(t.delivery_days ?? q.lead_time_days ?? 180)}</strong> Ngày (Tính từ khi nhận cọc)<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;納期日.月.年 : <strong>${esc(t.delivery_days ?? q.lead_time_days ?? 180)}</strong> 日間 (頭金を受けてから)
+        </div>
+        <div style="margin-bottom:3pt;">
+          <strong>④</strong> Thời hạn bảo hành : <strong>${esc(t.warranty_months ?? 12)}</strong> Tháng (Tính từ khi giao hàng)<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;保証期間は設置後: <strong>${esc(t.warranty_months ?? 12)}</strong> か月（設置後から計算）
+        </div>
+        <div style="margin-bottom:3pt; ${t.note_5_highlight ? 'color:#c00000; font-weight:bold;' : ''}">
+          <strong>⑤</strong> ${esc(t.note_5_vi || '').replace(/\n/g, '<br>&nbsp;&nbsp;&nbsp;&nbsp;')}
+        </div>
+        <div style="margin-bottom:3pt;">
+          <strong>⑥</strong> Phương pháp thanh toán 支払方法 :<br>
+          ${(t.payment_lines || []).map(pl => `&nbsp;&nbsp;&nbsp;&nbsp;${esc(pl)}`).join('<br>')}
+        </div>
+        <div style="margin-bottom:6pt;">
+          <strong>⑦</strong> Thông tin tài khoản 記銀行口座<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;Tên tài khoản 口座名義 : ${esc(t.bank_account_name_vi || 'KYOWA KAKO VIETNAM CO.,LTD')}<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;Số tài khoản 口座番号 : <strong>${esc(t.bank_account_no || '3680022466')}</strong><br>
+          &nbsp;&nbsp;&nbsp;&nbsp;Ngân hàng 銀行名 : ${esc(t.bank_name_vi || 'BIDV Bank - Tan Binh Branch, HCMC')}
+        </div>
+
+        <table width="260" style="border:1.2pt solid #000; margin-top:4pt;">
+          <tr>
+            <td style="padding:4pt 6pt 38pt 6pt; font-weight:bold;">
+              見積承認 Duyệt giá báo &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; / &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /
+            </td>
+          </tr>
+        </table>
+      </td>
+      <td width="36%" valign="top" align="center" style="padding-top:12pt;">
+        <div style="font-weight:bold; margin-bottom:6pt;">営業部 Phòng Kinh Doanh</div>
+        ${stampDataUrl ? `<img src="${stampDataUrl}" width="175" alt="Stamp"><br>` : '<div style="height:95pt;"></div>'}
+        ${(q.stamp_type === 'tayninh' || q.stamp_type === 'none') ? `
+          <div style="font-weight:bold; font-size:10.5pt; margin-top:4pt;">${esc(q.signer_name || 'NGUYỄN BẢO TRƯỜNG')}</div>
+        ` : ''}
+      </td>
+    </tr>
+  </table>
+</div>
+</body>
+</html>`;
+
+    const blob = new Blob([wordHtml], { type: 'application/msword;charset=utf-8' });
+    const filename = makeSafeFileName(q, 'doc');
+    triggerBlobDownload(blob, filename);
+    toast(`Đã xuất file Word: ${filename}`);
+  }
+
+  // --- Pure-JS OpenXML (.xlsx) Generator for Active Quotation ---
+  function createStoreZipBuffer(filesMap) {
+    const enc = new TextEncoder();
+    const crcTable = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) {
+        c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+      }
+      crcTable[n] = c >>> 0;
+    }
+    function crc32(bytes) {
+      let c = 0xffffffff;
+      for (let i = 0; i < bytes.length; i++) {
+        c = crcTable[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+      }
+      return (c ^ 0xffffffff) >>> 0;
+    }
+
+    const entries = Object.keys(filesMap).map(name => {
+      const nameBytes = enc.encode(name);
+      const dataBytes = typeof filesMap[name] === 'string' ? enc.encode(filesMap[name]) : filesMap[name];
+      const crc = crc32(dataBytes);
+      return { nameBytes, dataBytes, crc };
+    });
+
+    let localSize = 0;
+    let centralSize = 0;
+    entries.forEach(e => {
+      localSize += 30 + e.nameBytes.length + e.dataBytes.length;
+      centralSize += 46 + e.nameBytes.length;
+    });
+
+    const out = new Uint8Array(localSize + centralSize + 22);
+    const view = new DataView(out.buffer);
+    let localOffset = 0;
+    let centralOffset = localSize;
+
+    entries.forEach(e => {
+      const myLocalOffset = localOffset;
+      // Local file header
+      view.setUint32(localOffset, 0x04034b50, true);
+      view.setUint16(localOffset + 4, 20, true);
+      view.setUint16(localOffset + 6, 0x0800, true); // UTF-8 flag
+      view.setUint16(localOffset + 8, 0, true);      // STORE (no compression)
+      view.setUint16(localOffset + 10, 0, true);
+      view.setUint16(localOffset + 12, 0x5421, true);
+      view.setUint32(localOffset + 14, e.crc, true);
+      view.setUint32(localOffset + 18, e.dataBytes.length, true);
+      view.setUint32(localOffset + 22, e.dataBytes.length, true);
+      view.setUint16(localOffset + 26, e.nameBytes.length, true);
+      view.setUint16(localOffset + 28, 0, true);
+      out.set(e.nameBytes, localOffset + 30);
+      out.set(e.dataBytes, localOffset + 30 + e.nameBytes.length);
+      localOffset += 30 + e.nameBytes.length + e.dataBytes.length;
+
+      // Central directory header
+      view.setUint32(centralOffset, 0x02014b50, true);
+      view.setUint16(centralOffset + 4, 20, true);
+      view.setUint16(centralOffset + 6, 20, true);
+      view.setUint16(centralOffset + 8, 0x0800, true);
+      view.setUint16(centralOffset + 10, 0, true);
+      view.setUint16(centralOffset + 12, 0, true);
+      view.setUint16(centralOffset + 14, 0x5421, true);
+      view.setUint32(centralOffset + 16, e.crc, true);
+      view.setUint32(centralOffset + 20, e.dataBytes.length, true);
+      view.setUint32(centralOffset + 24, e.dataBytes.length, true);
+      view.setUint16(centralOffset + 28, e.nameBytes.length, true);
+      view.setUint16(centralOffset + 30, 0, true);
+      view.setUint16(centralOffset + 32, 0, true);
+      view.setUint16(centralOffset + 34, 0, true);
+      view.setUint16(centralOffset + 36, 0, true);
+      view.setUint32(centralOffset + 38, 0, true);
+      view.setUint32(centralOffset + 42, myLocalOffset, true);
+      out.set(e.nameBytes, centralOffset + 46);
+      centralOffset += 46 + e.nameBytes.length;
+    });
+
+    // End of central directory record
+    view.setUint32(centralOffset, 0x06054b50, true);
+    view.setUint16(centralOffset + 4, 0, true);
+    view.setUint16(centralOffset + 6, 0, true);
+    view.setUint16(centralOffset + 8, entries.length, true);
+    view.setUint16(centralOffset + 10, entries.length, true);
+    view.setUint32(centralOffset + 12, centralSize, true);
+    view.setUint32(centralOffset + 16, localSize, true);
+    view.setUint16(centralOffset + 20, 0, true);
+
+    return out;
+  }
+
+  function xmlEsc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function exportActiveQuoteToExcel() {
+    const q = state.activeQuote;
+    if (!q) {
+      toast('Chưa có báo giá nào đang mở để xuất Excel.');
+      return;
+    }
+    recalcActiveQuoteTotals();
+    const t = q.terms || {};
+
+    // Style indices in xl/styles.xml:
+    // 0: default (10.5pt Times New Roman)
+    // 1: Doc Title (16pt Bold Center)
+    // 2: Quote No / Date (10.5pt Bold)
+    // 3: Customer Name (11pt Bold Red #C00000, bottom medium border)
+    // 4: Company Name (11pt Bold Navy #1F3864, bottom medium border)
+    // 5: Normal Left
+    // 6: Bold Left
+    // 7: Table Header (10pt Bold Center Wrap, thin border, #E8EEF7 fill)
+    // 8: Section Header (10.5pt Bold Left, thin border, #F2F4F8 fill)
+    // 9: Item Center (STT, Unit, Qty, thin border)
+    // 10: Item Bold Left Wrap (Main Name, thin border)
+    // 11: Item Normal Left Wrap (Sub-line / Specs, thin border)
+    // 12: Item Number #,##0 (Unit price, thin border)
+    // 13: Item Bold Number #,##0 (Total price, thin border)
+    // 14: Item Bold Center (Remark, thin border)
+    // 15: Subtotal Label (10.5pt Bold Center, thin border, #F8FAFC fill)
+    // 16: Subtotal Number #,##0 (10.5pt Bold Right, thin border, #F8FAFC fill)
+    // 17: Grand Total After Tax Label (11pt Bold Center, thin border, #E2EFDA fill)
+    // 18: Grand Total After Tax Number #,##0 (11pt Bold Right, thin border, #E2EFDA fill)
+    // 19: Approval Box (10pt Bold, medium border)
+
+    const rows = [];
+    const merges = [];
+    function addRow(cellsObj, height = null) {
+      const rNum = rows.length + 1;
+      rows.push({ rNum, cells: cellsObj, height });
+      return rNum;
+    }
+
+    // Row 1: Quote No | Title | Date
+    addRow({
+      A: { v: q.quote_number || '', s: 2 },
+      B: { v: q.doc_title || '御見積 BÁO GIÁ', s: 1 },
+      G: { v: formatDateDMY(q.quote_date), s: 2 }
+    }, 28);
+    merges.push('B1:F1');
+
+    // Row 2: Blank spacer
+    addRow({}, 10);
+
+    // Rows 3-6: Customer & KKVN Party Info
+    const rCust = addRow({
+      A: { v: q.customer_name || '', s: 3 },
+      B: { v: '', s: 3 },
+      D: { v: 'KYOWA KAKO VIET NAM CO., LTD', s: 4 },
+      E: { v: '', s: 4 },
+      F: { v: '', s: 4 },
+      G: { v: '', s: 4 }
+    }, 20);
+    merges.push(`A${rCust}:B${rCust}`, `D${rCust}:G${rCust}`);
+
+    const rAddr = addRow({
+      A: { v: `住所 Địa chỉ: ${q.customer_address || ''}`, s: 5 },
+      D: { v: `住所 Địa chỉ: ${q.kkvn_address || ''}`, s: 5 }
+    }, 18);
+    merges.push(`A${rAddr}:B${rAddr}`, `D${rAddr}:G${rAddr}`);
+
+    const rPhone = addRow({
+      A: { v: `電話番号 Điện thoại: ${q.customer_phone || ''}`, s: 5 },
+      D: { v: `承認者 Người duyệt: ${q.approver_name || ''} ${q.approver_phone || ''}`, s: 6 }
+    }, 18);
+    merges.push(`A${rPhone}:B${rPhone}`, `D${rPhone}:G${rPhone}`);
+
+    const rContact = addRow({
+      A: { v: `連絡先 Liên hệ: ${q.customer_contact || ''}`, s: 5 },
+      D: { v: `担当者 Người đảm trách: ${q.pic_name || ''} ${q.pic_phone || ''}`, s: 6 }
+    }, 18);
+    merges.push(`A${rContact}:B${rContact}`, `D${rContact}:G${rContact}`);
+
+    addRow({}, 8);
+
+    // Project meta lines
+    const rProj = addRow({
+      A: { v: 'プロジェクト Dự Án :', s: 6 },
+      B: { v: q.project_name || '', s: 6 }
+    }, 18);
+    merges.push(`B${rProj}:G${rProj}`);
+
+    const rLoc = addRow({
+      A: { v: '設置先 Nơi lắp đặt :', s: 5 },
+      B: { v: q.install_location || '', s: 5 }
+    }, 18);
+    merges.push(`B${rLoc}:G${rLoc}`);
+
+    const rLead = addRow({
+      A: { v: '納期 Thời gian đặt hàng :', s: 5 },
+      B: { v: `${q.lead_time_days || 180} 日間 ${q.lead_time_note || 'Ngày (kể từ ngày nhận cọc)'}`, s: 6 }
+    }, 18);
+    merges.push(`B${rLead}:G${rLead}`);
+
+    addRow({}, 8);
+
+    // Table Header
+    addRow({
+      A: { v: '番号 / STT', s: 7 },
+      B: { v: '明細 / Chi Tiết', s: 7 },
+      C: { v: '単位 / Đơn Vị', s: 7 },
+      D: { v: '数 / SL', s: 7 },
+      E: { v: '単価 / Đơn giá', s: 7 },
+      F: { v: '金額(VND) / Thành Tiền', s: 7 },
+      G: { v: '備考 / Ghi Chú', s: 7 }
+    }, 26);
+
+    // Items & Sections
+    (q.sections || []).forEach(sec => {
+      if (sec.title && sec.title.trim()) {
+        const rSec = addRow({
+          A: { v: sec.title, s: 8 },
+          B: { v: '', s: 8 }, C: { v: '', s: 8 }, D: { v: '', s: 8 },
+          E: { v: '', s: 8 }, F: { v: '', s: 8 }, G: { v: '', s: 8 }
+        }, 20);
+        merges.push(`A${rSec}:G${rSec}`);
+      }
+
+      (sec.items || []).forEach(it => {
+        const fullTitle = `${it.name_jp ? it.name_jp + ' ' : ''}${it.name_vi || ''}`;
+        addRow({
+          A: { v: it.stt || '', s: 9 },
+          B: { v: fullTitle, s: 10 },
+          C: { v: it.unit || '', s: 9 },
+          D: { v: Number(it.quantity || 1), t: 'n', s: 9 },
+          E: { v: Number(it.unit_price || 0), t: 'n', s: 12 },
+          F: { v: Number(it.total_price || 0), t: 'n', s: 13 },
+          G: { v: it.remark || '', s: 14 }
+        }, 20);
+
+        if (it.specs_text && it.specs_text.trim()) {
+          addRow({
+            A: { v: '', s: 9 },
+            B: { v: `   ${it.specs_text}`, s: 11 },
+            C: { v: '', s: 9 }, D: { v: '', s: 9 },
+            E: { v: '', s: 12 }, F: { v: '', s: 13 }, G: { v: '', s: 14 }
+          }, 18);
+        }
+
+        if (it.sub_lines && it.sub_lines.length > 0) {
+          it.sub_lines.forEach(sl => {
+            const subText = sl.right_text
+              ? `${sl.text || ''}   (${sl.right_text})`
+              : (sl.text || '');
+            addRow({
+              A: { v: '', s: 9 },
+              B: { v: subText, s: 11 },
+              C: { v: '', s: 9 }, D: { v: '', s: 9 },
+              E: { v: '', s: 12 }, F: { v: '', s: 13 },
+              G: { v: sl.remark || '', s: 14 }
+            }, 18);
+          });
+        }
+      });
+
+      if (sec.showSubtotal) {
+        const rSub = addRow({
+          A: { v: sec.subtotalLabel || 'TOTAL', s: 15 },
+          B: { v: '', s: 15 }, C: { v: '', s: 15 }, D: { v: '', s: 15 }, E: { v: '', s: 15 },
+          F: { v: Number(sec.subtotal || 0), t: 'n', s: 16 },
+          G: { v: '', s: 15 }
+        }, 20);
+        merges.push(`A${rSub}:E${rSub}`);
+      }
+    });
+
+    // Summary Rows
+    const rPre = addRow({
+      A: { v: t.total_label_before_tax || 'Total (A) + (B) - Before TAX', s: 15 },
+      B: { v: '', s: 15 }, C: { v: '', s: 15 }, D: { v: '', s: 15 }, E: { v: '', s: 15 },
+      F: { v: Number(q.subtotal_before_tax || 0), t: 'n', s: 16 },
+      G: { v: '', s: 15 }
+    }, 20);
+    merges.push(`A${rPre}:E${rPre}`);
+
+    const rVat = addRow({
+      A: { v: `TAX VAT   ${Number(q.vat_percent || 0)}%`, s: 15 },
+      B: { v: '', s: 15 }, C: { v: '', s: 15 }, D: { v: '', s: 15 }, E: { v: '', s: 15 },
+      F: { v: Number(q.vat_amount || 0), t: 'n', s: 16 },
+      G: { v: '', s: 15 }
+    }, 20);
+    merges.push(`A${rVat}:E${rVat}`);
+
+    const rPost = addRow({
+      A: { v: 'Total - After TAX', s: 17 },
+      B: { v: '', s: 17 }, C: { v: '', s: 17 }, D: { v: '', s: 17 }, E: { v: '', s: 17 },
+      F: { v: Number(q.total_after_tax || 0), t: 'n', s: 18 },
+      G: { v: '', s: 17 }
+    }, 22);
+    merges.push(`A${rPost}:E${rPost}`);
+
+    addRow({}, 10);
+
+    // Commercial Notes ① -> ⑦ & Sales Dept Signer
+    const noteLines = [
+      `① Thời hạn báo giá (見積の有効期限): ${t.validity_days ?? 30} ngày / 日間`,
+      `② Địa điểm giao hàng (Delivery先): ${t.delivery_place_vi || 'Tại chân công trình'} (${t.delivery_place_jp || '工事現場で引き渡し'})`,
+      `③ Thời gian giao hàng (納期): ${t.delivery_days ?? q.lead_time_days ?? 180} Ngày (Tính từ khi nhận cọc)`,
+      `④ Thời hạn bảo hành (保証期間): ${t.warranty_months ?? 12} Tháng (Tính từ khi giao hàng)`,
+      `⑤ ${(t.note_5_vi || '').replace(/\n/g, ' | ')}`,
+      `⑥ Phương pháp thanh toán (支払方法): ${(t.payment_lines || []).join(' ; ')}`,
+      `⑦ Tài khoản NH (銀行口座): ${t.bank_account_name_vi || 'KYOWA KAKO VIETNAM CO.,LTD'} - STK: ${t.bank_account_no || '3680022466'} (${t.bank_name_vi || 'BIDV Bank - Tan Binh Branch, HCMC'})`
+    ];
+
+    const rNoteHead = addRow({
+      A: { v: '記 Ghi chú', s: 6 },
+      F: { v: '営業部 Phòng Kinh Doanh', s: 14 }
+    }, 18);
+    merges.push(`A${rNoteHead}:D${rNoteHead}`, `F${rNoteHead}:G${rNoteHead}`);
+
+    noteLines.forEach((nl, idx) => {
+      const cells = { A: { v: nl, s: 5 } };
+      if (idx === 3) {
+        cells.F = { v: q.signer_name || 'NGUYỄN BẢO TRƯỜNG', s: 14 };
+      }
+      const rN = addRow(cells, 18);
+      merges.push(`A${rN}:E${rN}`);
+      if (idx === 3) merges.push(`F${rN}:G${rN}`);
+    });
+
+    addRow({}, 6);
+    const rApp = addRow({
+      A: { v: '見積承認 Duyệt giá báo :          /          /          ', s: 19 },
+      B: { v: '', s: 19 }
+    }, 32);
+    merges.push(`A${rApp}:B${rApp}`);
+
+    // Build sheet1.xml
+    const colOrder = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+    let sheetDataXml = '';
+    rows.forEach(row => {
+      const htAttr = row.height ? ` ht="${row.height}" customHeight="1"` : '';
+      sheetDataXml += `<row r="${row.rNum}"${htAttr}>`;
+      colOrder.forEach(col => {
+        const cell = row.cells[col];
+        if (!cell) return;
+        const ref = `${col}${row.rNum}`;
+        const sAttr = cell.s !== undefined ? ` s="${cell.s}"` : '';
+        if (cell.t === 'n') {
+          sheetDataXml += `<c r="${ref}"${sAttr}><v>${Number(cell.v || 0)}</v></c>`;
+        } else {
+          sheetDataXml += `<c r="${ref}"${sAttr} t="inlineStr"><is><t>${xmlEsc(cell.v)}</t></is></c>`;
+        }
+      });
+      sheetDataXml += '</row>';
+    });
+
+    const mergeXml = merges.length > 0
+      ? `<mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>`
+      : '';
+
+    const sheet1Xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
+  <cols>
+    <col min="1" max="1" width="9" customWidth="1"/>
+    <col min="2" max="2" width="52" customWidth="1"/>
+    <col min="3" max="3" width="11" customWidth="1"/>
+    <col min="4" max="4" width="8" customWidth="1"/>
+    <col min="5" max="5" width="16" customWidth="1"/>
+    <col min="6" max="6" width="18" customWidth="1"/>
+    <col min="7" max="7" width="16" customWidth="1"/>
+  </cols>
+  <sheetData>${sheetDataXml}</sheetData>
+  ${mergeXml}
+  <pageMargins left="0.35" right="0.35" top="0.4" bottom="0.4" header="0.2" footer="0.2"/>
+  <pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>
+</worksheet>`;
+
+    const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="1">
+    <numFmt numFmtId="164" formatCode="#,##0"/>
+  </numFmts>
+  <fonts count="7">
+    <font><sz val="10.5"/><name val="Times New Roman"/></font>
+    <font><b/><sz val="16"/><name val="Times New Roman"/></font>
+    <font><b/><sz val="10.5"/><name val="Times New Roman"/></font>
+    <font><b/><sz val="11"/><color rgb="FFC00000"/><name val="Times New Roman"/></font>
+    <font><b/><sz val="11"/><color rgb="FF1F3864"/><name val="Times New Roman"/></font>
+    <font><b/><sz val="10"/><name val="Times New Roman"/></font>
+    <font><b/><sz val="11"/><name val="Times New Roman"/></font>
+  </fonts>
+  <fills count="6">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFE8EEF7"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF2F4F8"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF8FAFC"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFE2EFDA"/></patternFill></fill>
+  </fills>
+  <borders count="4">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/><diagonal/></border>
+    <border><left/><right/><top/><bottom style="medium"/><diagonal/></border>
+    <border><left style="medium"/><right style="medium"/><top style="medium"/><bottom style="medium"/><diagonal/></border>
+  </borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="20">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="5" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="2" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="2" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="6" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="6" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="3" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+  </cellXfs>
+</styleSheet>`;
+
+    const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`;
+
+    const relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+
+    const sheetNameSafe = xmlEsc(String(q.quote_number || 'Bao_Gia').slice(0, 31));
+    const workbookXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="${sheetNameSafe}" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>`;
+
+    const wbRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+
+    const zipBytes = createStoreZipBuffer({
+      '[Content_Types].xml': contentTypesXml,
+      '_rels/.rels': relsXml,
+      'xl/workbook.xml': workbookXml,
+      'xl/_rels/workbook.xml.rels': wbRelsXml,
+      'xl/styles.xml': stylesXml,
+      'xl/worksheets/sheet1.xml': sheet1Xml
+    });
+
+    const blob = new Blob([zipBytes], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    const filename = makeSafeFileName(q, 'xlsx');
+    triggerBlobDownload(blob, filename);
+    toast(`Đã xuất file Excel: ${filename}`);
+  }
+
+  // ===========================================================================
   // TAB 4: QUẢN LÝ HỒ SƠ BÁO GIÁ & PHÊ DUYỆT
   // ===========================================================================
   function renderQuotesList() {
@@ -3153,7 +4130,7 @@ const App = (() => {
             </p>
           </div>
           <div class="row">
-            <input type="text" placeholder="Tìm số BG, khách hàng, dự án..." value="${esc(state.quoteSearch)}"
+            <input type="text" id="quoteSearchInput" placeholder="Tìm số BG, khách hàng, dự án..." value="${esc(state.quoteSearch)}"
                    oninput="App.setQuoteFilter('search', this.value)" style="flex:1 1 200px;">
             <select onchange="App.setQuoteFilter('status', this.value)">
               <option value="ALL" ${state.quoteStatusFilter === 'ALL' ? 'selected' : ''}>Tất cả trạng thái (${state.quotations.length})</option>
@@ -3261,10 +4238,28 @@ const App = (() => {
     `;
   }
 
+
   function setQuoteFilter(type, val) {
     if (type === 'search') state.quoteSearch = val;
     if (type === 'status') state.quoteStatusFilter = val;
+    const activeEl = document.activeElement;
+    const wasSearchFocused = activeEl && activeEl.id === 'quoteSearchInput';
+    const selStart = wasSearchFocused ? activeEl.selectionStart : null;
+    const selEnd = wasSearchFocused ? activeEl.selectionEnd : null;
+
     renderQuotesList();
+
+    if (wasSearchFocused) {
+      const nextInput = document.getElementById('quoteSearchInput');
+      if (nextInput) {
+        nextInput.focus();
+        try {
+          if (selStart !== null && selEnd !== null) {
+            nextInput.setSelectionRange(selStart, selEnd);
+          }
+        } catch {}
+      }
+    }
   }
 
   async function openQuoteToTab(id, tab) {
@@ -3525,6 +4520,7 @@ const App = (() => {
       </div>
     `;
   }
+
 
   function setCatFilterProd(val) {
     state.catFilterProd = val;
@@ -3893,6 +4889,7 @@ const App = (() => {
     `;
   }
 
+
   function openUserPermModal(userId) {
     const existing = userId ? state.usersAdminList.find(u => u.id === userId) : null;
     state.editingUser = existing ? JSON.parse(JSON.stringify(existing)) : {
@@ -4235,6 +5232,9 @@ const App = (() => {
     loadQuotationById,
     createNewRevision,
     changeQuoteStatus,
+    exportActiveQuoteToPdf,
+    exportActiveQuoteToWord,
+    exportActiveQuoteToExcel,
     setQuoteFilter,
     openQuoteToTab,
     deleteQuote,
