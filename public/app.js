@@ -2936,13 +2936,13 @@ const App = (() => {
                 📨 Đánh dấu Đã gửi KH
               </button>
             ` : ''}
-            <button class="btn" id="btnExportPdfDirect" style="background:#dc2626;color:#fff;border-color:#b91c1c;" onclick="App.exportActiveQuoteToPdf(this)" title="Tải trực tiếp file PDF (.pdf) chuẩn khổ A4 về máy (Không mở hộp thoại máy in)">
+            <button class="btn" id="btnExportPdfDirect" style="" onclick="App.exportActiveQuoteToPdf(this)" title="Tải trực tiếp file PDF (.pdf) chuẩn khổ A4 về máy (Không mở hộp thoại máy in)">
               📄 Xuất PDF (.pdf)
             </button>
-            <button class="btn" style="background:#1e40af;color:#fff;border-color:#1e3a8a;" onclick="App.exportActiveQuoteToWord()" title="Tải về file Word (.doc) chuẩn bố cục A4 KKVN để chỉnh sửa trong Microsoft Word">
+            <button class="btn" style="" onclick="App.exportActiveQuoteToWord()" title="Tải về file Word (.doc) chuẩn bố cục A4 KKVN để chỉnh sửa trong Microsoft Word">
               📝 Xuất Word (.doc)
             </button>
-            <button class="btn" style="background:#15803d;color:#fff;border-color:#166534;" onclick="App.exportActiveQuoteToExcel()" title="Tải về file Excel (.xlsx) chuẩn bảng tính báo giá KKVN">
+            <button class="btn" style="" onclick="App.exportActiveQuoteToExcel()" title="Tải về file Excel (.xlsx) chuẩn bảng tính báo giá KKVN">
               📊 Xuất Excel (.xlsx)
             </button>
             <button class="btn btn-navy" onclick="window.print()" title="Mở hộp thoại kết nối máy in để in giấy trực tiếp">
@@ -4810,7 +4810,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
       <div class="grid-2">
         <div class="card">
           <div class="card-header">
-            <h3 class="card-title">Ma Trận Phân Quyền Mặc Định Theo Vai Trò</h3>
+            <h3 class="card-title">Phân Quyền Mặc Định Theo Vai Trò</h3>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -4936,7 +4936,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
     body.innerHTML = `
       <div class="card-header">
         <h3 class="card-title">
-          ${isEdit ? `✏️ Chỉnh Sửa Tài Khoản & Phân Quyền: ${esc(u.full_name)} (${esc(u.username)})` : '➕ Tạo Tài Khoản Người Dùng Mới & Phân Quyền'}
+          ${isEdit ? `Chỉnh Sửa Tài Khoản & Phân Quyền: ${esc(u.full_name)} (${esc(u.username)})` : '➕ Tạo Tài Khoản Người Dùng Mới & Phân Quyền'}
         </h3>
         <button class="btn btn-sm" onclick="App.closeUserPermModal()">✕</button>
       </div>
@@ -4956,7 +4956,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
             <input type="text" id="uf_fullname" value="${esc(u.full_name)}" required placeholder="VD: Mr Nguyễn Văn Nam">
           </label>
           <label class="field">
-            Số điện thoại (In trên báo giá)
+            Số điện thoại
             <input type="text" id="uf_phone" value="${esc(u.phone || '')}" placeholder="VD: 0908-xxx-xxx">
           </label>
           <label class="field">
@@ -4982,7 +4982,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
 
         <div style="background: var(--navy-light); padding: 12px; border-radius: 8px; margin-bottom: 14px;">
           <label class="field">
-            Chọn Vai Trò Mẫu (Tự động áp dụng bộ quyền chuẩn bên dưới):
+            Vai Trò (Tự động áp dụng bộ quyền chuẩn bên dưới):
             <select id="uf_role" onchange="App.onRolePresetSelect(this.value)" style="font-weight:700;">
               <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin / Ban Giám Đốc (Toàn quyền hệ thống)</option>
               <option value="manager" ${u.role === 'manager' ? 'selected' : ''}>Quản lý Kinh doanh (Xem Giá Cost, Duyệt BG, Quản lý danh mục)</option>
