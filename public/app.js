@@ -35,7 +35,11 @@ const App = (() => {
 
     // Catalog & filter state
     catFilterProd: 'ALL',
+    catModelSearch: '',
+    catModelSort: 'default',
     equipFilterCat: 'ALL',
+    equipSearch: '',
+    equipSort: 'default',
     quoteSearch: '',
     quoteStatusFilter: 'ALL',
 
@@ -1404,7 +1408,7 @@ const App = (() => {
             <div class="row-between sec-header-bar">
               <div class="row sec-header-fields">
                 <label class="field sec-title-field">
-                  Tiêu đề Nhóm / Phân khu (Để trống nếu không chia nhóm như mẫu SMC)
+                  Tiêu đề Nhóm / Phân khu
                   <input type="text" value="${esc(sec.title)}" placeholder="VD: A./製造 Sản xuất hoặc I. PH1 - Tháp SCR 1-1"
                          oninput="App.updateSectionField(${sIdx}, 'title', this.value)">
                 </label>
@@ -4300,8 +4304,107 @@ xmlns="http://www.w3.org/TR/REC-html40">
   }
 
   // ===========================================================================
-  // TAB 5: QUẢN TRỊ DANH MỤC (MASTER DATA) & ĐỒNG BỘ EXCEL
+  // TAB 5: QUẢN LÝ SẢN PHẨM, THIẾT BỊ & DỊCH VỤ (MASTER DATA & EXCEL)
   // ===========================================================================
+  function getFilteredAndSortedModels() {
+    const search = (state.catModelSearch || '').trim().toLowerCase();
+    const list = state.models.filter(m => {
+      if (state.catFilterProd !== 'ALL' && m.product_line !== state.catFilterProd) return false;
+      if (search) {
+        const hay = [
+          m.product_line,
+          m.model_code,
+          `model ${m.model_code}`,
+          String(m.flow_rate),
+          m.fan_model,
+          `${m.motor_kw}kw`,
+          `${m.fan_pressure_pa}pa`,
+          m.pump_model
+        ].join(' ').toLowerCase();
+        if (!hay.includes(search)) return false;
+      }
+      return true;
+    });
+
+    const sortKey = state.catModelSort || 'default';
+    if (sortKey === 'default') return list;
+
+    const sorted = [...list];
+    const numCode = (c) => {
+      const n = parseFloat(String(c || '').replace(/[^0-9.]/g, ''));
+      return Number.isNaN(n) ? 0 : n;
+    };
+
+    sorted.sort((a, b) => {
+      switch (sortKey) {
+        case 'prod_asc': return String(a.product_line || '').localeCompare(String(b.product_line || ''));
+        case 'prod_desc': return String(b.product_line || '').localeCompare(String(a.product_line || ''));
+        case 'model_asc': return numCode(a.model_code) - numCode(b.model_code) || String(a.model_code).localeCompare(String(b.model_code));
+        case 'model_desc': return numCode(b.model_code) - numCode(a.model_code) || String(b.model_code).localeCompare(String(a.model_code));
+        case 'flow_asc': return Number(a.flow_rate || 0) - Number(b.flow_rate || 0);
+        case 'flow_desc': return Number(b.flow_rate || 0) - Number(a.flow_rate || 0);
+        case 'tower_base_asc': return Number(a.tower_base || 0) - Number(b.tower_base || 0);
+        case 'tower_base_desc': return Number(b.tower_base || 0) - Number(a.tower_base || 0);
+        case 'fan_base_asc': return Number(a.fan_base || 0) - Number(b.fan_base || 0);
+        case 'fan_base_desc': return Number(b.fan_base || 0) - Number(a.fan_base || 0);
+        case 'pump_base_asc': return Number(a.pump_base || 0) - Number(b.pump_base || 0);
+        case 'pump_base_desc': return Number(b.pump_base || 0) - Number(a.pump_base || 0);
+        case 'total_cost_asc': return Number(a.total_cost || 0) - Number(b.total_cost || 0);
+        case 'total_cost_desc': return Number(b.total_cost || 0) - Number(a.total_cost || 0);
+        case 'total_base_asc': return Number(a.total_base || 0) - Number(b.total_base || 0);
+        case 'total_base_desc': return Number(b.total_base || 0) - Number(a.total_base || 0);
+        default: return 0;
+      }
+    });
+    return sorted;
+  }
+
+  function getFilteredAndSortedEquip() {
+    const search = (state.equipSearch || '').trim().toLowerCase();
+    const list = state.equipment.filter(e => {
+      if (state.equipFilterCat !== 'ALL' && e.category !== state.equipFilterCat) return false;
+      if (search) {
+        const hay = [
+          e.category,
+          e.name_jp,
+          e.name_vi,
+          e.specs,
+          e.unit,
+          e.origin_note
+        ].join(' ').toLowerCase();
+        if (!hay.includes(search)) return false;
+      }
+      return true;
+    });
+
+    const sortKey = state.equipSort || 'default';
+    if (sortKey === 'default') return list;
+
+    const sorted = [...list];
+    sorted.sort((a, b) => {
+      switch (sortKey) {
+        case 'cat_asc': return String(a.category || '').localeCompare(String(b.category || ''));
+        case 'cat_desc': return String(b.category || '').localeCompare(String(a.category || ''));
+        case 'jp_asc': return String(a.name_jp || '').localeCompare(String(b.name_jp || ''));
+        case 'jp_desc': return String(b.name_jp || '').localeCompare(String(a.name_jp || ''));
+        case 'name_asc': return String(a.name_vi || '').localeCompare(String(b.name_vi || ''), 'vi');
+        case 'name_desc': return String(b.name_vi || '').localeCompare(String(a.name_vi || ''), 'vi');
+        case 'cost_asc': return Number(a.cost_price || 0) - Number(b.cost_price || 0);
+        case 'cost_desc': return Number(b.cost_price || 0) - Number(a.cost_price || 0);
+        case 'base_asc': return Number(a.base_price ?? -1) - Number(b.base_price ?? -1);
+        case 'base_desc': return Number(b.base_price ?? -1) - Number(a.base_price ?? -1);
+        default: return 0;
+      }
+    });
+    return sorted;
+  }
+
+  function sortIconHtml(currentSort, prefix) {
+    if (currentSort === `${prefix}_asc`) return ' <span style="color:var(--green)">↑</span>';
+    if (currentSort === `${prefix}_desc`) return ' <span style="color:var(--red)">↓</span>';
+    return ' <span style="opacity:0.35;font-size:11px;">⇅</span>';
+  }
+
   function renderCatalogView() {
     const container = document.getElementById('view-catalog');
     if (!container) return;
@@ -4310,31 +4413,36 @@ xmlns="http://www.w3.org/TR/REC-html40">
     const canManageCat = state.permissions.canManageCatalog;
     const canExport = state.permissions.canExportExcel || canManageCat;
     const productLines = [...new Set(state.models.map(m => m.product_line))];
-    const filteredModels = state.models.filter(m =>
-      state.catFilterProd === 'ALL' || m.product_line === state.catFilterProd
-    );
-    const filteredEquip = state.equipment.filter(e =>
-      state.equipFilterCat === 'ALL' || e.category === state.equipFilterCat
-    );
+    const filteredModels = getFilteredAndSortedModels();
+    const filteredEquip = getFilteredAndSortedEquip();
+    const mSort = state.catModelSort || 'default';
+    const eSort = state.equipSort || 'default';
+
+    const activeEl = document.activeElement;
+    const focusId = (activeEl && (activeEl.id === 'catModelSearchInput' || activeEl.id === 'equipSearchInput'))
+      ? activeEl.id
+      : null;
+    const selStart = focusId ? activeEl.selectionStart : null;
+    const selEnd = focusId ? activeEl.selectionEnd : null;
 
     container.innerHTML = `
       <div class="card">
         <div class="row-between">
           <div>
-            <h2 class="card-title">Quản Trị Danh Mục Bảng Giá & Đồng Bộ File Excel (Data báo giá.xlsx)</h2>
+            <h2 class="card-title">Quản Lý Sản Phẩm, Thiết Bị & Dịch Vụ (Đồng Bộ File Data báo giá.xlsx)</h2>
             <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted)">
-              ${state.models.length} cấu hình Model tháp (Giá Cost & Giá Cơ Bản) và ${state.equipment.length} thiết bị đo, quạt, bơm, phụ kiện, dịch vụ.
+              ${state.models.length} cấu hình Sản phẩm Hệ tháp (Giá Cost & Giá Cơ Bản) và ${state.equipment.length} thiết bị đo, quạt, bơm, phụ kiện, dịch vụ.
             </p>
           </div>
           <div class="row">
             ${canExport ? `
               <a class="btn btn-navy" href="/api/catalog/export-excel?token=${encodeURIComponent(state.authToken)}" download="Data_bao_gia_Kyowa_Kako.xlsx" style="text-decoration:none">
-                📥 Xuất Danh Mục Ra Excel (.xlsx 3 Sheet)
+                📤 Xuất Danh Mục Ra Excel (.xlsx 3 Sheet)
               </a>
             ` : ''}
             ${canManageCat ? `
               <label class="btn btn-primary" style="cursor:pointer;margin:0;">
-                📤 Nhập / Cập Nhật Từ File Excel (.xlsx)
+                📥 Nhập / Cập Nhật Từ File Excel (.xlsx)
                 <input type="file" accept=".xlsx" style="display:none" onchange="App.uploadExcelCatalog(this)">
               </label>
               <button class="btn" onclick="App.resyncDefaultExcel()">
@@ -4349,12 +4457,37 @@ xmlns="http://www.w3.org/TR/REC-html40">
 
       <div class="card">
         <div class="card-header">
-          <div class="row" style="align-items:center;">
-            <h3 class="card-title" style="margin:0;">1. Bảng Giá Cấu Hình Hệ Tháp (${filteredModels.length} Model)</h3>
+          <div class="row" style="align-items:center; flex:1;">
+            <h3 class="card-title" style="margin:0;">1. Bảng Giá Cấu Hình Hệ Tháp (${filteredModels.length}/${state.models.length} Model)</h3>
             <select onchange="App.setCatFilterProd(this.value)">
               <option value="ALL" ${state.catFilterProd === 'ALL' ? 'selected' : ''}>Tất cả dòng tháp (${state.models.length})</option>
               ${productLines.map(p => `<option value="${esc(p)}" ${state.catFilterProd === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}
             </select>
+            <input type="text" id="catModelSearchInput"
+                   placeholder="Tìm dòng SP, mã model, lưu lượng, quạt, bơm..."
+                   value="${esc(state.catModelSearch || '')}"
+                   oninput="App.setCatModelSearch(this.value)"
+                   style="flex:1 1 210px;">
+            <select onchange="App.setCatModelSort(this.value)" title="Sắp xếp bảng cấu hình Hệ tháp">
+              <option value="default" ${mSort === 'default' ? 'selected' : ''}>⇅ Sắp xếp: Mặc định</option>
+              <option value="flow_asc" ${mSort === 'flow_asc' ? 'selected' : ''}>Lưu lượng: Thấp → Cao (↑)</option>
+              <option value="flow_desc" ${mSort === 'flow_desc' ? 'selected' : ''}>Lưu lượng: Cao → Thấp (↓)</option>
+              <option value="total_base_asc" ${mSort === 'total_base_asc' ? 'selected' : ''}>Tổng Giá Cơ Bản: Thấp → Cao (↑)</option>
+              <option value="total_base_desc" ${mSort === 'total_base_desc' ? 'selected' : ''}>Tổng Giá Cơ Bản: Cao → Thấp (↓)</option>
+              <option value="tower_base_asc" ${mSort === 'tower_base_asc' ? 'selected' : ''}>Giá Tháp (CB): Thấp → Cao (↑)</option>
+              <option value="tower_base_desc" ${mSort === 'tower_base_desc' ? 'selected' : ''}>Giá Tháp (CB): Cao → Thấp (↓)</option>
+              ${showCost ? `
+                <option value="total_cost_asc" ${mSort === 'total_cost_asc' ? 'selected' : ''}>Tổng Giá Cost: Thấp → Cao (↑)</option>
+                <option value="total_cost_desc" ${mSort === 'total_cost_desc' ? 'selected' : ''}>Tổng Giá Cost: Cao → Thấp (↓)</option>
+              ` : ''}
+              <option value="model_asc" ${mSort === 'model_asc' ? 'selected' : ''}>Mã Model: Nhỏ → Lớn (↑)</option>
+              <option value="model_desc" ${mSort === 'model_desc' ? 'selected' : ''}>Mã Model: Lớn → Nhỏ (↓)</option>
+              <option value="prod_asc" ${mSort === 'prod_asc' ? 'selected' : ''}>Dòng SP: A → Z (↑)</option>
+              <option value="prod_desc" ${mSort === 'prod_desc' ? 'selected' : ''}>Dòng SP: Z → A (↓)</option>
+            </select>
+            ${(state.catModelSearch || state.catFilterProd !== 'ALL' || mSort !== 'default') ? `
+              <button class="btn btn-sm" onclick="App.resetCatModelFilter()" title="Xóa bộ lọc và sắp xếp">✕ Đặt lại</button>
+            ` : ''}
           </div>
           ${canManageCat ? `
             <button class="btn btn-sm btn-primary" onclick="App.showAddModelModal()">
@@ -4389,24 +4522,24 @@ xmlns="http://www.w3.org/TR/REC-html40">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Dòng SP</th>
-                <th>Model</th>
-                <th class="r">Lưu lượng</th>
+                <th style="cursor:pointer;user-select:none;" onclick="App.toggleCatModelColSort('prod')" title="Nhấn để sắp xếp theo Dòng SP">Dòng SP${sortIconHtml(mSort, 'prod')}</th>
+                <th style="cursor:pointer;user-select:none;" onclick="App.toggleCatModelColSort('model')" title="Nhấn để sắp xếp theo Mã Model">Model${sortIconHtml(mSort, 'model')}</th>
+                <th class="r" style="cursor:pointer;user-select:none;" onclick="App.toggleCatModelColSort('flow')" title="Nhấn để sắp xếp theo Lưu lượng">Lưu lượng${sortIconHtml(mSort, 'flow')}</th>
                 ${showCost ? '<th class="r cost-col">Tháp (Cost)</th>' : ''}
-                <th class="r">Tháp (Cơ bản)</th>
+                <th class="r" style="cursor:pointer;user-select:none;" onclick="App.toggleCatModelColSort('tower_base')" title="Nhấn để sắp xếp theo Giá Tháp">Tháp (Cơ bản)${sortIconHtml(mSort, 'tower_base')}</th>
                 <th>Quạt (Motor/Pa)</th>
-                <th class="r">Giá Quạt (CB)</th>
+                <th class="r" style="cursor:pointer;user-select:none;" onclick="App.toggleCatModelColSort('fan_base')" title="Nhấn để sắp xếp theo Giá Quạt">Giá Quạt (CB)${sortIconHtml(mSort, 'fan_base')}</th>
                 <th>Dòng Bơm</th>
-                <th class="r">Giá Bơm (CB)</th>
+                <th class="r" style="cursor:pointer;user-select:none;" onclick="App.toggleCatModelColSort('pump_base')" title="Nhấn để sắp xếp theo Giá Bơm">Giá Bơm (CB)${sortIconHtml(mSort, 'pump_base')}</th>
                 <th class="r">Tủ điện (CB)</th>
                 <th class="r">Stage (CB)</th>
                 <th class="r">QL & TK (CB)</th>
-                ${showCost ? '<th class="r cost-col">Tổng Cost</th>' : ''}
-                <th class="r">Tổng Giá Cơ Bản</th>
+                ${showCost ? `<th class="r cost-col" style="cursor:pointer;user-select:none;" onclick="App.toggleCatModelColSort('total_cost')" title="Nhấn để sắp xếp theo Tổng Cost">Tổng Cost${sortIconHtml(mSort, 'total_cost')}</th>` : ''}
+                <th class="r" style="cursor:pointer;user-select:none;" onclick="App.toggleCatModelColSort('total_base')" title="Nhấn để sắp xếp theo Tổng Giá Cơ Bản">Tổng Giá Cơ Bản${sortIconHtml(mSort, 'total_base')}</th>
               </tr>
             </thead>
             <tbody>
-              ${filteredModels.map(m => `
+              ${filteredModels.length > 0 ? filteredModels.map(m => `
                 <tr>
                   <td><strong>${esc(m.product_line)}</strong></td>
                   <td><strong>${esc(m.model_code)}</strong></td>
@@ -4423,7 +4556,13 @@ xmlns="http://www.w3.org/TR/REC-html40">
                   ${showCost ? `<td class="r cost-col"><strong>${fmtVnd(m.total_cost)}</strong></td>` : ''}
                   <td class="r"><strong style="color:var(--green)">${fmtVnd(m.total_base)}</strong></td>
                 </tr>
-              `).join('')}
+              `).join('') : `
+                <tr>
+                  <td colspan="${showCost ? 14 : 12}" class="c" style="padding:18px;color:var(--muted);">
+                    Không tìm thấy Model tháp nào phù hợp với từ khóa "${esc(state.catModelSearch)}".
+                  </td>
+                </tr>
+              `}
             </tbody>
           </table>
         </div>
@@ -4431,8 +4570,8 @@ xmlns="http://www.w3.org/TR/REC-html40">
 
       <div class="card">
         <div class="card-header">
-          <div class="row" style="align-items:center;">
-            <h3 class="card-title" style="margin:0;">2. Danh Mục Thiết Bị Đo, Option, Quạt Lẻ, Bơm Lẻ & Dịch Vụ (${filteredEquip.length})</h3>
+          <div class="row" style="align-items:center; flex:1;">
+            <h3 class="card-title" style="margin:0;">2. Danh Mục khác (${filteredEquip.length}/${state.equipment.length})</h3>
             <select onchange="App.setEquipFilterCat(this.value)">
               <option value="ALL" ${state.equipFilterCat === 'ALL' ? 'selected' : ''}>Tất cả nhóm (${state.equipment.length})</option>
               <option value="instrument" ${state.equipFilterCat === 'instrument' ? 'selected' : ''}>Thiết bị đo (Sheet 3 Excel)</option>
@@ -4441,6 +4580,27 @@ xmlns="http://www.w3.org/TR/REC-html40">
               <option value="pump" ${state.equipFilterCat === 'pump' ? 'selected' : ''}>Bơm tuần hoàn lẻ (Pump)</option>
               <option value="service" ${state.equipFilterCat === 'service' ? 'selected' : ''}>Dịch vụ (Thiết kế, Vận chuyển, Lắp đặt...)</option>
             </select>
+            <input type="text" id="equipSearchInput"
+                   placeholder="Tìm tên thiết bị/dịch vụ, tiếng Nhật, thông số, xuất xứ..."
+                   value="${esc(state.equipSearch || '')}"
+                   oninput="App.setEquipSearch(this.value)"
+                   style="flex:1 1 210px;">
+            <select onchange="App.setEquipSort(this.value)" title="Sắp xếp bảng Thiết bị & Dịch vụ">
+              <option value="default" ${eSort === 'default' ? 'selected' : ''}>⇅ Sắp xếp: Mặc định</option>
+              <option value="base_asc" ${eSort === 'base_asc' ? 'selected' : ''}>Đơn giá cơ bản: Thấp → Cao (↑)</option>
+              <option value="base_desc" ${eSort === 'base_desc' ? 'selected' : ''}>Đơn giá cơ bản: Cao → Thấp (↓)</option>
+              ${showCost ? `
+                <option value="cost_asc" ${eSort === 'cost_asc' ? 'selected' : ''}>Giá Cost: Thấp → Cao (↑)</option>
+                <option value="cost_desc" ${eSort === 'cost_desc' ? 'selected' : ''}>Giá Cost: Cao → Thấp (↓)</option>
+              ` : ''}
+              <option value="name_asc" ${eSort === 'name_asc' ? 'selected' : ''}>Tên Thiết Bị / Dịch Vụ: A → Z (↑)</option>
+              <option value="name_desc" ${eSort === 'name_desc' ? 'selected' : ''}>Tên Thiết Bị / Dịch Vụ: Z → A (↓)</option>
+              <option value="cat_asc" ${eSort === 'cat_asc' ? 'selected' : ''}>Nhóm: A → Z (↑)</option>
+              <option value="cat_desc" ${eSort === 'cat_desc' ? 'selected' : ''}>Nhóm: Z → A (↓)</option>
+            </select>
+            ${(state.equipSearch || state.equipFilterCat !== 'ALL' || eSort !== 'default') ? `
+              <button class="btn btn-sm" onclick="App.resetEquipFilter()" title="Xóa bộ lọc và sắp xếp">✕ Đặt lại</button>
+            ` : ''}
           </div>
           ${canManageCat ? `
             <button class="btn btn-sm btn-primary" onclick="document.getElementById('addEquipFormWrap').classList.toggle('hidden')">
@@ -4478,20 +4638,20 @@ xmlns="http://www.w3.org/TR/REC-html40">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Nhóm</th>
-                <th style="min-width:110px;">Tên tiếng Nhật</th>
-                <th style="min-width:210px;">Tên Thiết Bị / Dịch Vụ (Tiếng Việt)</th>
+                <th style="cursor:pointer;user-select:none;" onclick="App.toggleEquipColSort('cat')" title="Nhấn để sắp xếp theo Nhóm">Nhóm${sortIconHtml(eSort, 'cat')}</th>
+                <th style="min-width:110px;cursor:pointer;user-select:none;" onclick="App.toggleEquipColSort('jp')" title="Nhấn để sắp xếp theo Tên tiếng Nhật">Tên tiếng Nhật${sortIconHtml(eSort, 'jp')}</th>
+                <th style="min-width:210px;cursor:pointer;user-select:none;" onclick="App.toggleEquipColSort('name')" title="Nhấn để sắp xếp theo Tên Thiết Bị / Dịch Vụ">Tên Thiết Bị / Dịch Vụ (Tiếng Việt)${sortIconHtml(eSort, 'name')}</th>
                 <th style="min-width:170px;">Thông số kỹ thuật</th>
                 <th class="c">Đơn vị</th>
-                ${showCost ? '<th class="r cost-col">Giá Cost (VND)</th>' : ''}
-                <th class="r">Đơn giá cơ bản (VND)</th>
+                ${showCost ? `<th class="r cost-col" style="cursor:pointer;user-select:none;" onclick="App.toggleEquipColSort('cost')" title="Nhấn để sắp xếp theo Giá Cost">Giá Cost (VND)${sortIconHtml(eSort, 'cost')}</th>` : ''}
+                <th class="r" style="cursor:pointer;user-select:none;" onclick="App.toggleEquipColSort('base')" title="Nhấn để sắp xếp theo Đơn giá cơ bản">Đơn giá cơ bản (VND)${sortIconHtml(eSort, 'base')}</th>
                 <th style="min-width:135px;">Quy tắc gói cơ bản</th>
                 <th style="min-width:95px;">Ghi chú</th>
                 ${canManageCat ? '<th class="c">Xóa</th>' : ''}
               </tr>
             </thead>
             <tbody>
-              ${filteredEquip.map(eq => `
+              ${filteredEquip.length > 0 ? filteredEquip.map(eq => `
                 <tr>
                   <td><strong>${esc(eq.category.toUpperCase())}</strong></td>
                   <td>${esc(eq.name_jp || '—')}</td>
@@ -4513,12 +4673,30 @@ xmlns="http://www.w3.org/TR/REC-html40">
                     </td>
                   ` : ''}
                 </tr>
-              `).join('')}
+              `).join('') : `
+                <tr>
+                  <td colspan="${(showCost ? 9 : 8) + (canManageCat ? 1 : 0)}" class="c" style="padding:18px;color:var(--muted);">
+                    Không tìm thấy Thiết bị / Dịch vụ nào phù hợp với từ khóa "${esc(state.equipSearch)}".
+                  </td>
+                </tr>
+              `}
             </tbody>
           </table>
         </div>
       </div>
     `;
+
+    if (focusId) {
+      const nextInput = document.getElementById(focusId);
+      if (nextInput) {
+        nextInput.focus();
+        try {
+          if (selStart !== null && selEnd !== null) {
+            nextInput.setSelectionRange(selStart, selEnd);
+          }
+        } catch {}
+      }
+    }
   }
 
 
@@ -4527,8 +4705,60 @@ xmlns="http://www.w3.org/TR/REC-html40">
     renderCatalogView();
   }
 
+  function setCatModelSearch(val) {
+    state.catModelSearch = val;
+    renderCatalogView();
+  }
+
+  function setCatModelSort(val) {
+    state.catModelSort = val;
+    renderCatalogView();
+  }
+
+  function toggleCatModelColSort(prefix) {
+    if (state.catModelSort === `${prefix}_asc`) {
+      state.catModelSort = `${prefix}_desc`;
+    } else {
+      state.catModelSort = `${prefix}_asc`;
+    }
+    renderCatalogView();
+  }
+
+  function resetCatModelFilter() {
+    state.catFilterProd = 'ALL';
+    state.catModelSearch = '';
+    state.catModelSort = 'default';
+    renderCatalogView();
+  }
+
   function setEquipFilterCat(val) {
     state.equipFilterCat = val;
+    renderCatalogView();
+  }
+
+  function setEquipSearch(val) {
+    state.equipSearch = val;
+    renderCatalogView();
+  }
+
+  function setEquipSort(val) {
+    state.equipSort = val;
+    renderCatalogView();
+  }
+
+  function toggleEquipColSort(prefix) {
+    if (state.equipSort === `${prefix}_asc`) {
+      state.equipSort = `${prefix}_desc`;
+    } else {
+      state.equipSort = `${prefix}_asc`;
+    }
+    renderCatalogView();
+  }
+
+  function resetEquipFilter() {
+    state.equipFilterCat = 'ALL';
+    state.equipSearch = '';
+    state.equipSort = 'default';
     renderCatalogView();
   }
 
@@ -5239,7 +5469,15 @@ xmlns="http://www.w3.org/TR/REC-html40">
     openQuoteToTab,
     deleteQuote,
     setCatFilterProd,
+    setCatModelSearch,
+    setCatModelSort,
+    toggleCatModelColSort,
+    resetCatModelFilter,
     setEquipFilterCat,
+    setEquipSearch,
+    setEquipSort,
+    toggleEquipColSort,
+    resetEquipFilter,
     showAddModelModal,
     submitNewModel,
     submitNewEquip,

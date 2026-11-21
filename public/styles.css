@@ -1769,6 +1769,11 @@ table.data-table tr.selected-row td {
     gap: 10px;
   }
 
+  .row-between > *,
+  .card-header > * {
+    flex: 0 0 auto;
+  }
+
   .row {
     gap: 8px;
   }
@@ -1814,24 +1819,28 @@ table.data-table tr.selected-row td {
   /* Flow 2 Section Header Bar & Toolbars on Mobile */
   .sec-header-bar {
     padding: 10px;
+    gap: 8px;
   }
 
   .sec-header-fields {
     flex-direction: column;
     align-items: stretch !important;
+    flex: 0 0 auto !important;
     width: 100%;
     gap: 8px;
   }
 
   .sec-title-field,
   .sec-sublabel-field {
+    flex: 0 0 auto !important;
     width: 100% !important;
     max-width: 100% !important;
     min-width: 0 !important;
   }
 
   .sec-subcheck-label {
-    margin-top: 2px !important;
+    flex: 0 0 auto !important;
+    margin-top: 0 !important;
   }
 
   .bulk-factor-box {
