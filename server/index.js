@@ -701,11 +701,24 @@ const server = http.createServer(async (req, res) => {
       const statusMatch = pathname.match(/^\/api\/quotations\/(\d+)\/status$/);
       if (statusMatch && method === 'POST') {
         const id = Number(statusMatch[1]);
+        const existing = db.prepare('SELECT * FROM quotations WHERE id = ?').get(id);
+        if (!existing) return sendJson(res, 404, { error: 'Không tìm thấy báo giá.' });
+
         const body = await readJsonBody(req);
         const nextStatus = body.status;
+
         if ((nextStatus === 'approved' || nextStatus === 'rejected') && !perms.canApproveQuote) {
           return sendJson(res, 403, { error: 'Tài khoản của bạn không có quyền phê duyệt báo giá.' });
         }
+
+        if (nextStatus === 'pending_approval') {
+          const isCreator = existing.created_by === currentUser.username;
+          const isAdmin = currentUser.role === 'admin';
+          if (!isCreator && !isAdmin) {
+            return sendJson(res, 403, { error: `Chỉ người tạo báo giá (@${existing.created_by}) hoặc Admin mới có quyền gửi duyệt báo giá này.` });
+          }
+        }
+
         const isApproving = nextStatus === 'approved';
         const approvedBy = isApproving ? currentUser.full_name : null;
         const approvedAt = isApproving ? nowVN() : null;

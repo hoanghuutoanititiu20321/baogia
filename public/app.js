@@ -979,6 +979,11 @@ const App = (() => {
               <button class="btn btn-primary" onclick="App.saveActiveQuotation()">
                 💾 Lưu Báo Giá
               </button>
+              ${(q.status === 'draft' || q.status === 'rejected' || !q.id) ? `
+                <button class="btn" style="background:#f59e0b;color:#fff;border-color:#d97706;" onclick="App.saveAndSubmitForApproval()" title="Lưu báo giá và chuyển sang trạng thái Chờ duyệt">
+                  📤 Gửi Duyệt
+                </button>
+              ` : ''}
             ` : `
               <button class="btn" disabled style="opacity:0.65;cursor:not-allowed;"
                       title="${q.status === 'approved' ? 'Báo giá đã duyệt không được chỉnh sửa trực tiếp' : `Chỉ người tạo (@${esc(q.created_by)}) hoặc Admin mới có quyền chỉnh sửa`}">
@@ -988,11 +993,6 @@ const App = (() => {
             ${q.id ? `
               <button class="btn btn-navy" onclick="App.createNewRevision(${q.id})" title="Tạo phiên bản chỉnh sửa mới (-02, -03) giữ nguyên lịch sử giá cũ">
                 📑 Tạo Phiên Bản Mới (Rev +1)
-              </button>
-            ` : ''}
-            ${q.id && q.status === 'draft' && canEdit ? `
-              <button class="btn" onclick="App.changeQuoteStatus(${q.id}, 'pending_approval')">
-                📤 Gửi Duyệt
               </button>
             ` : ''}
             ${q.id && canApprove && q.status !== 'approved' ? `
@@ -1291,7 +1291,7 @@ const App = (() => {
                     <th style="width:65px" class="r">SL</th>
                     ${showCost ? '<th style="width:125px" class="r cost-col">Giá Cost (VND)</th>' : ''}
                     <th style="width:130px" class="r">Giá gốc cơ bản</th>
-                    <th style="width:130px" class="r" title="Hệ số nhân điều chỉnh cho từng hạng mục (Đơn giá = Giá gốc × Hệ số)">Chênh lệch (Hệ số ×)</th>
+                    <th style="width:130px" class="r" title="Hệ số nhân điều chỉnh cho từng hạng mục (Đơn giá = Giá gốc × Hệ số)">Chênh lệch</th>
                     <th style="width:135px" class="r">Đơn giá sau ĐC</th>
                     <th style="width:135px" class="r">Thành tiền</th>
                     <th style="width:110px">Ghi chú</th>
@@ -1471,14 +1471,26 @@ const App = (() => {
         <div class="card">
           <div class="card-header">
             <h3 class="card-title">5. Tổng Hợp Giá Báo, Chênh Lệch & Thuế VAT</h3>
-            <label class="row" style="align-items:center;gap:6px;font-weight:700;">
-              Thuế suất VAT:
-              <select onchange="App.updateQField('vat_percent', Number(this.value)); App.renderFlow2();">
-                <option value="0" ${Number(q.vat_percent) === 0 ? 'selected' : ''}>0% (Chế xuất / EPE)</option>
-                <option value="8" ${Number(q.vat_percent) === 8 ? 'selected' : ''}>8% (VAT tiêu chuẩn)</option>
-                <option value="10" ${Number(q.vat_percent) === 10 ? 'selected' : ''}>10%</option>
-              </select>
-            </label>
+            <div class="row" style="align-items:center;gap:6px;">
+              <span style="font-weight:700;font-size:13px;">Thuế suất VAT:</span>
+              <div class="row" style="gap:4px;">
+                ${[0, 5, 8, 10].map(pct => `
+                  <button type="button" class="btn btn-sm ${Number(q.vat_percent) === pct ? 'btn-navy' : ''}"
+                          id="vatPresetBtn-${pct}"
+                          style="padding:4px 8px;font-size:12px;"
+                          onclick="App.setQuickVatPercent(${pct})">${pct}%</button>
+                `).join('')}
+              </div>
+              <div style="display:flex;align-items:center;gap:4px;">
+                <input type="number" id="vatPercentInput" class="num" min="0" max="100" step="0.1"
+                       style="width:72px;padding:5px 7px;font-weight:700;"
+                       value="${q.vat_percent ?? 8}"
+                       title="Nhập mức thuế VAT tùy ý (%)"
+                       onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
+                       oninput="App.onVatPercentInput(this.value, this)">
+                <span style="font-weight:700;">%</span>
+              </div>
+            </div>
           </div>
 
           <table class="data-table" id="summaryTotalsTable">
@@ -1504,7 +1516,7 @@ const App = (() => {
                 <td class="r" id="sumPreTaxVal">${fmtVnd(q.subtotal_before_tax)} VND</td>
               </tr>
               <tr>
-                <td>Thuế GTGT (TAX VAT ${q.vat_percent}%)</td>
+                <td id="sumVatLabel">Thuế GTGT (TAX VAT ${q.vat_percent}%)</td>
                 <td class="r" id="sumVatVal">${fmtVnd(q.vat_amount)} VND</td>
               </tr>
               <tr class="total-row">
@@ -1534,6 +1546,11 @@ const App = (() => {
               <button class="btn btn-primary" onclick="App.saveActiveQuotation()">
                 💾 Lưu Báo Giá Hiện Tại
               </button>
+              ${(q.status === 'draft' || q.status === 'rejected' || !q.id) ? `
+                <button class="btn" style="background:#f59e0b;color:#fff;border-color:#d97706;" onclick="App.saveAndSubmitForApproval()">
+                  📤 Lưu & Gửi Duyệt
+                </button>
+              ` : ''}
             ` : ''}
             <button class="btn btn-navy" onclick="App.showTab('print')">
               🖨️ Chuyển Sang Bản In / Xuất PDF Chuẩn Mẫu KKVN →
@@ -1907,10 +1924,16 @@ const App = (() => {
     }
     const sumPre = document.getElementById('sumPreTaxVal');
     if (sumPre) sumPre.textContent = `${fmtVnd(q.subtotal_before_tax)} VND`;
+    const sumVatLabel = document.getElementById('sumVatLabel');
+    if (sumVatLabel) sumVatLabel.textContent = `Thuế GTGT (TAX VAT ${q.vat_percent}%)`;
     const sumVat = document.getElementById('sumVatVal');
     if (sumVat) sumVat.textContent = `${fmtVnd(q.vat_amount)} VND`;
     const sumPost = document.getElementById('sumPostTaxVal');
     if (sumPost) sumPost.textContent = `${fmtVnd(q.total_after_tax)} VND`;
+    [0, 5, 8, 10].forEach(pct => {
+      const btn = document.getElementById(`vatPresetBtn-${pct}`);
+      if (btn) btn.classList.toggle('btn-navy', Number(q.vat_percent) === pct);
+    });
     const sumMargin = document.getElementById('sumMarginVal');
     if (sumMargin) {
       const margin = q.subtotal_before_tax - q.subtotal_cost;
@@ -2012,6 +2035,30 @@ const App = (() => {
     const bulkInput = document.getElementById('bulkFactorInput');
     if (bulkInput) bulkInput.value = safeFactor;
     applyBulkFactorToAll(safeFactor, bulkInput, true);
+  }
+
+  function onVatPercentInput(rawVal, inputEl = null) {
+    const q = state.activeQuote;
+    if (!q) return;
+    const strVal = String(rawVal ?? '').trim();
+    if (strVal.includes('-') || Number(strVal) < 0) {
+      if (inputEl) inputEl.value = 0;
+      q.vat_percent = 0;
+    } else if (strVal === '') {
+      q.vat_percent = 0;
+    } else {
+      q.vat_percent = Math.min(100, Math.max(0, Number(strVal)));
+    }
+    refreshFlow2PriceDom(inputEl);
+  }
+
+  function setQuickVatPercent(pct) {
+    const q = state.activeQuote;
+    if (!q) return;
+    q.vat_percent = Math.max(0, Number(pct || 0));
+    const inp = document.getElementById('vatPercentInput');
+    if (inp) inp.value = q.vat_percent;
+    refreshFlow2PriceDom(inp);
   }
 
   function addSubLine(sIdx, iIdx) {
@@ -2266,6 +2313,51 @@ const App = (() => {
     }
   }
 
+  function saveAndSubmitForApproval() {
+    if (!state.activeQuote) return;
+    if (!canUserEditQuote(state.activeQuote)) {
+      toast(`Chỉ người tạo (@${state.activeQuote.created_by}) hoặc Admin mới có quyền gửi duyệt báo giá này.`);
+      return;
+    }
+    recalcActiveQuoteTotals();
+    const q = state.activeQuote;
+    openConfirmModal({
+      title: '📤 Xác Nhận Lưu & Gửi Duyệt Báo Giá',
+      okText: '📤 Xác nhận Gửi duyệt',
+      isDanger: false,
+      messageHtml: `
+        Bạn có chắc chắn muốn <strong>Lưu và Gửi duyệt</strong> hồ sơ báo giá này lên Quản lý / Người duyệt không?
+        <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;">
+          <div>• Số báo giá: <strong style="color:var(--navy)">${esc(q.quote_number)}</strong></div>
+          <div>• Khách hàng: <strong>${esc(q.customer_name)}</strong></div>
+          <div>• Tổng cộng sau thuế: <strong style="color:var(--green)">${fmtVnd(q.total_after_tax)} VND</strong></div>
+        </div>
+      `,
+      onConfirm: async () => {
+        try {
+          let saved;
+          if (q.id) {
+            saved = await api(`/api/quotations/${q.id}`, {
+              method: 'PUT',
+              body: JSON.stringify({ ...q, status: 'pending_approval' })
+            });
+          } else {
+            saved = await api('/api/quotations', {
+              method: 'POST',
+              body: JSON.stringify({ ...q, status: 'pending_approval' })
+            });
+          }
+          state.activeQuote = saved;
+          await loadBootstrap();
+          renderAll();
+          toast(`Đã lưu và gửi duyệt báo giá ${saved.quote_number} thành công!`);
+        } catch (err) {
+          toast('Lỗi gửi duyệt: ' + err.message);
+        }
+      }
+    });
+  }
+
   async function loadQuotationById(id) {
     if (!id) return;
     try {
@@ -2460,7 +2552,7 @@ const App = (() => {
           <div>
             <h2 class="card-title" style="margin:0">Xem Trước Bản In / Xuất PDF Chuẩn Biểu Mẫu Kyowa Kako Việt Nam</h2>
             <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted)">
-              Định dạng khổ A4 song ngữ Nhật – Việt chuẩn xác theo mẫu báo giá gốc. Nhấn <strong>In / Lưu PDF</strong> và chọn Destination là <em>Save as PDF</em>.
+              Định dạng khổ A4.
             </p>
           </div>
           <div class="row">
@@ -2792,6 +2884,9 @@ const App = (() => {
                       `}
                       <button class="btn btn-icon" onclick="App.openQuoteToTab(${q.id}, 'print')" title="Xem bản in / Xuất PDF">🖨️</button>
                       <button class="btn btn-icon" onclick="App.createNewRevision(${q.id})" title="Tạo phiên bản mới (+Rev)">📑</button>
+                      ${canEditRow && (q.status === 'draft' || q.status === 'rejected') ? `
+                        <button class="btn btn-icon" style="background:#fef3c7;border-color:#f59e0b;color:#b45309;" onclick="App.changeQuoteStatus(${q.id}, 'pending_approval')" title="Gửi duyệt báo giá này">📤</button>
+                      ` : ''}
                       ${canApprove && q.status !== 'approved' ? `
                         <button class="btn btn-icon btn-primary" onclick="App.changeQuoteStatus(${q.id}, 'approved')" title="Phê duyệt báo giá">✅</button>
                       ` : ''}
@@ -2877,7 +2972,7 @@ const App = (() => {
           <div>
             <h2 class="card-title">Quản Trị Danh Mục Bảng Giá & Đồng Bộ File Excel (Data báo giá.xlsx)</h2>
             <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted)">
-              Quản lý toàn bộ ${state.models.length} cấu hình Model tháp (Giá Cost & Giá Cơ Bản) và ${state.equipment.length} thiết bị đo, quạt, bơm, phụ kiện, dịch vụ.
+              ${state.models.length} cấu hình Model tháp (Giá Cost & Giá Cơ Bản) và ${state.equipment.length} thiết bị đo, quạt, bơm, phụ kiện, dịch vụ.
             </p>
           </div>
           <div class="row">
@@ -3757,11 +3852,14 @@ const App = (() => {
     applyBulkFactorToAll,
     handleBulkFactorBlur,
     setQuickBulkFactor,
+    onVatPercentInput,
+    setQuickVatPercent,
     addSubLine,
     updateSubLine,
     removeSubLine,
     createBlankQuoteTemplate,
     saveActiveQuotation,
+    saveAndSubmitForApproval,
     loadQuotationById,
     createNewRevision,
     changeQuoteStatus,
