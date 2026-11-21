@@ -4128,12 +4128,12 @@ xmlns="http://www.w3.org/TR/REC-html40">
       <div class="card">
         <div class="card-header">
           <div>
-            <h2 class="card-title">Quản Lý Hồ Sơ Báo Giá, Lịch Sử Phiên Bản (Revision) & Phê Duyệt</h2>
+            <h2 class="card-title">Quản Lý Báo Giá</h2>
             <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted)">
               ${state.permissions.canViewAllQuotes ? 'Hiển thị toàn bộ báo giá trong hệ thống.' : 'Chế độ giới hạn: Chỉ hiển thị các báo giá do bạn tạo hoặc đứng tên phụ trách.'}
             </p>
           </div>
-          <div class="row">
+          <div class="col">
             <input type="text" id="quoteSearchInput" placeholder="Tìm số BG, khách hàng, dự án..." value="${esc(state.quoteSearch)}"
                    oninput="App.setQuoteFilter('search', this.value)" style="flex:1 1 200px;">
             <select onchange="App.setQuoteFilter('status', this.value)">
