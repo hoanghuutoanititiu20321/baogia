@@ -13,6 +13,10 @@ const {
   getDefaultPermissionsForRole,
   parseUserPermissions,
   logAudit,
+  createNotification,
+  notifyUsersList,
+  notifyApprovers,
+  notifyAllActiveUsers,
   getPumpSpecHint,
   getTowerDimensionHint
 } = require('./db');
@@ -265,14 +269,57 @@ const server = http.createServer(async (req, res) => {
           );
         }
 
+        const notifications = db.prepare(`
+          SELECT * FROM notifications WHERE recipient_username = ?
+          ORDER BY id DESC LIMIT 40
+        `).all(currentUser.username);
+        const unreadNotifs = db.prepare(`
+          SELECT COUNT(*) as cnt FROM notifications WHERE recipient_username = ? AND is_read = 0
+        `).get(currentUser.username)?.cnt || 0;
+
         return sendJson(res, 200, {
           currentUser: sanitizeUser(currentUser),
           permissions: perms,
           users,
           tower_models: rawModels.map(m => formatModelRow(m, showCost)),
           equipment_catalog: rawEquip.map(e => formatEquipRow(e, showCost)),
-          quotations: rawQuotes.map(q => formatQuoteRow(q, showCost))
+          quotations: rawQuotes.map(q => formatQuoteRow(q, showCost)),
+          notifications,
+          unread_notifications: unreadNotifs
         });
+      }
+
+      // =======================================================================
+      // NOTIFICATIONS APIs
+      // =======================================================================
+      if (pathname === '/api/notifications' && method === 'GET') {
+        const notifications = db.prepare(`
+          SELECT * FROM notifications WHERE recipient_username = ?
+          ORDER BY id DESC LIMIT 40
+        `).all(currentUser.username);
+        const unreadCount = db.prepare(`
+          SELECT COUNT(*) as cnt FROM notifications WHERE recipient_username = ? AND is_read = 0
+        `).get(currentUser.username)?.cnt || 0;
+        return sendJson(res, 200, { notifications, unread_count: unreadCount });
+      }
+
+      if (pathname === '/api/notifications/read-all' && method === 'POST') {
+        db.prepare('UPDATE notifications SET is_read = 1 WHERE recipient_username = ? AND is_read = 0')
+          .run(currentUser.username);
+        return sendJson(res, 200, { success: true });
+      }
+
+      if (pathname === '/api/notifications/clear-read' && method === 'DELETE') {
+        db.prepare('DELETE FROM notifications WHERE recipient_username = ? AND is_read = 1')
+          .run(currentUser.username);
+        return sendJson(res, 200, { success: true });
+      }
+
+      const notifReadMatch = pathname.match(/^\/api\/notifications\/(\d+)\/read$/);
+      if (notifReadMatch && method === 'POST') {
+        db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND recipient_username = ?')
+          .run(Number(notifReadMatch[1]), currentUser.username);
+        return sendJson(res, 200, { success: true });
       }
 
       // =======================================================================
@@ -525,6 +572,19 @@ const server = http.createServer(async (req, res) => {
 
         const created = db.prepare('SELECT * FROM quotations WHERE id = ?').get(info.lastInsertRowid);
         logAudit(currentUser.username, currentUser.full_name, 'CREATE_QUOTE', `Tạo báo giá ${created.quote_number} - KH: ${created.customer_name}`);
+        if (created.status === 'pending_approval') {
+          const fmtAmt = Math.round(Number(created.total_after_tax || 0)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+          notifyApprovers(currentUser.username, {
+            actor_username: currentUser.username,
+            actor_name: currentUser.full_name,
+            type: 'pending_approval',
+            title: `📤 Yêu cầu duyệt báo giá ${created.quote_number}`,
+            message: `${currentUser.full_name} tạo và gửi duyệt báo giá cho KH ${created.customer_name} (${fmtAmt} đ).`,
+            quote_id: created.id,
+            quote_number: created.quote_number,
+            target_tab: 'flow2'
+          });
+        }
         return sendJson(res, 201, formatQuoteRow(created, showCost));
       }
 
@@ -705,6 +765,19 @@ const server = http.createServer(async (req, res) => {
 
         const created = db.prepare('SELECT * FROM quotations WHERE id = ?').get(info.lastInsertRowid);
         logAudit(currentUser.username, currentUser.full_name, 'NEW_REVISION', `Tạo revision ${created.quote_number} từ ${orig.quote_number}`);
+        if (orig.created_by && orig.created_by !== currentUser.username) {
+          createNotification({
+            recipient_username: orig.created_by,
+            actor_username: currentUser.username,
+            actor_name: currentUser.full_name,
+            type: 'revision',
+            title: `📑 Phiên bản mới ${created.quote_number}`,
+            message: `${currentUser.full_name} vừa tạo phiên bản mới ${created.quote_number} từ báo giá ${orig.quote_number} (KH: ${orig.customer_name}).`,
+            quote_id: created.id,
+            quote_number: created.quote_number,
+            target_tab: 'flow2'
+          });
+        }
         return sendJson(res, 201, formatQuoteRow(created, showCost));
       }
 
@@ -751,6 +824,74 @@ const server = http.createServer(async (req, res) => {
         `).run(nextStatus, approvedBy, approvedAt, id);
         const updated = db.prepare('SELECT * FROM quotations WHERE id = ?').get(id);
         logAudit(currentUser.username, currentUser.full_name, 'STATUS_CHANGE', `Chuyển trạng thái báo giá ${updated.quote_number} -> ${nextStatus}`);
+
+        // Gửi thông báo tự động theo trạng thái phê duyệt báo giá
+        const fmtAmt = Math.round(Number(updated.total_after_tax || 0)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        if (nextStatus === 'pending_approval') {
+          notifyApprovers(currentUser.username, {
+            actor_username: currentUser.username,
+            actor_name: currentUser.full_name,
+            type: 'pending_approval',
+            title: `📤 Yêu cầu duyệt báo giá ${updated.quote_number}`,
+            message: `${currentUser.full_name} gửi duyệt báo giá cho KH ${updated.customer_name} (${fmtAmt} đ).`,
+            quote_id: updated.id,
+            quote_number: updated.quote_number,
+            target_tab: 'flow2'
+          });
+        } else if (nextStatus === 'approved') {
+          if (updated.created_by && updated.created_by !== currentUser.username) {
+            createNotification({
+              recipient_username: updated.created_by,
+              actor_username: currentUser.username,
+              actor_name: currentUser.full_name,
+              type: 'approved',
+              title: `✅ Báo giá ${updated.quote_number} đã được PHÊ DUYỆT`,
+              message: `${currentUser.full_name} đã phê duyệt báo giá KH ${updated.customer_name} (${fmtAmt} đ). Có thể xuất PDF gửi khách hàng.`,
+              quote_id: updated.id,
+              quote_number: updated.quote_number,
+              target_tab: 'print'
+            });
+          }
+        } else if (nextStatus === 'rejected') {
+          if (updated.created_by && updated.created_by !== currentUser.username) {
+            createNotification({
+              recipient_username: updated.created_by,
+              actor_username: currentUser.username,
+              actor_name: currentUser.full_name,
+              type: 'rejected',
+              title: `⚠️ Báo giá ${updated.quote_number} cần chỉnh sửa`,
+              message: `${currentUser.full_name} yêu cầu chỉnh sửa lại báo giá KH ${updated.customer_name}.`,
+              quote_id: updated.id,
+              quote_number: updated.quote_number,
+              target_tab: 'flow2'
+            });
+          }
+        } else if (nextStatus === 'sent') {
+          notifyApprovers(currentUser.username, {
+            actor_username: currentUser.username,
+            actor_name: currentUser.full_name,
+            type: 'sent',
+            title: `📨 Đã gửi KH báo giá ${updated.quote_number}`,
+            message: `${currentUser.full_name} đã xác nhận xuất & gửi báo giá cho KH ${updated.customer_name} (${fmtAmt} đ).`,
+            quote_id: updated.id,
+            quote_number: updated.quote_number,
+            target_tab: 'quotes'
+          });
+          if (updated.created_by && updated.created_by !== currentUser.username) {
+            createNotification({
+              recipient_username: updated.created_by,
+              actor_username: currentUser.username,
+              actor_name: currentUser.full_name,
+              type: 'sent',
+              title: `📨 Báo giá ${updated.quote_number} đã gửi Khách hàng`,
+              message: `${currentUser.full_name} đã đánh dấu báo giá KH ${updated.customer_name} là Đã gửi KH.`,
+              quote_id: updated.id,
+              quote_number: updated.quote_number,
+              target_tab: 'quotes'
+            });
+          }
+        }
+
         return sendJson(res, 200, formatQuoteRow(updated, showCost));
       }
 
@@ -890,6 +1031,14 @@ const server = http.createServer(async (req, res) => {
         }
 
         logAudit(currentUser.username, currentUser.full_name, 'IMPORT_EXCEL', `Đồng bộ ${parsed.models?.length || 0} model từ file Excel`);
+        notifyAllActiveUsers(currentUser.username, {
+          actor_username: currentUser.username,
+          actor_name: currentUser.full_name,
+          type: 'catalog',
+          title: '📊 Đã cập nhật Bảng giá Sản phẩm & Dịch vụ',
+          message: `${currentUser.full_name} vừa đồng bộ ${parsed.models?.length || 0} model tháp từ file Excel.`,
+          target_tab: 'catalog'
+        });
         return sendJson(res, 200, {
           success: true,
           importedModelsCount: parsed.models ? parsed.models.length : 0,

@@ -63,7 +63,13 @@ const App = (() => {
       try { return Number(JSON.parse(localStorage.getItem('kkvn_print_prefs') || '{}').printWatermarkSize || 490); } catch { return 490; }
     })(),
     printPickerOpen: false,
-    watermarkDataUrlCache: {}
+    watermarkDataUrlCache: {},
+
+    // Notifications state
+    notifications: [],
+    unreadNotifications: 0,
+    lastSeenNotifId: 0,
+    notifPollTimer: null
   };
 
   const PERM_DEFINITIONS = [
@@ -147,6 +153,7 @@ const App = (() => {
         state.activeQuote = JSON.parse(JSON.stringify(state.quotations[0]));
       }
       renderAll();
+      startNotifPolling();
     } catch (err) {
       console.warn('Session invalid or expired:', err.message);
       showLoginScreen();
@@ -204,6 +211,7 @@ const App = (() => {
         state.activeQuote = JSON.parse(JSON.stringify(state.quotations[0]));
       }
       renderAll();
+      startNotifPolling();
       toast(`Xin chào ${state.currentUser.full_name} (${ROLE_LABELS[state.currentUser.role] || state.currentUser.role})!`);
     } catch (err) {
       showLoginScreen(err.message);
@@ -216,8 +224,12 @@ const App = (() => {
         await api('/api/auth/logout', { method: 'POST' }).catch(() => { });
       }
     } finally {
+      stopNotifPolling();
       state.authToken = '';
       state.currentUser = null;
+      state.notifications = [];
+      state.unreadNotifications = 0;
+      state.lastSeenNotifId = 0;
       localStorage.removeItem('kkvn_auth_token');
       showLoginScreen();
       toast('Đã đăng xuất khỏi hệ thống.');
@@ -268,6 +280,12 @@ const App = (() => {
     state.models = data.tower_models || [];
     state.equipment = data.equipment_catalog || [];
     state.quotations = data.quotations || [];
+    state.notifications = data.notifications || [];
+    state.unreadNotifications = Number(data.unread_notifications || 0);
+    if (state.notifications.length > 0 && state.lastSeenNotifId === 0) {
+      state.lastSeenNotifId = state.notifications[0].id;
+    }
+    renderNotifications();
 
     // Update Header user info & Dropdown menu
     const u = state.currentUser;
@@ -6389,8 +6407,178 @@ xmlns="http://www.w3.org/TR/REC-html40">
     }
   }
 
+  // ===========================================================================
+  // HỆ THỐNG THÔNG BÁO (NOTIFICATIONS BELL & REALTIME POLLING)
+  // ===========================================================================
+  function renderNotifications() {
+    const badge = document.getElementById('notifBadge');
+    const titleEl = document.getElementById('notifHeaderTitle');
+    const listEl = document.getElementById('notifListContainer');
+    const unread = Number(state.unreadNotifications || 0);
+
+    if (badge) {
+      if (unread > 0) {
+        badge.textContent = unread > 99 ? '99+' : String(unread);
+        badge.classList.remove('hidden');
+      } else {
+        badge.textContent = '0';
+        badge.classList.add('hidden');
+      }
+    }
+
+    if (titleEl) {
+      titleEl.textContent = unread > 0 ? `Thông báo (${unread} mới)` : 'Thông báo';
+    }
+
+    if (!listEl) return;
+    if (!state.notifications || state.notifications.length === 0) {
+      listEl.innerHTML = '<div class="notif-empty">Hiện chưa có thông báo nào.</div>';
+      return;
+    }
+
+    listEl.innerHTML = state.notifications.map(n => `
+      <button type="button" class="notif-item ${n.is_read ? '' : 'unread'}" onclick="App.openNotification(${n.id})">
+        <div class="notif-item-body">
+          <div class="notif-item-title">${esc(n.title)}</div>
+          <div class="notif-item-msg">${esc(n.message)}</div>
+          <div class="notif-item-time">
+            <span>🕒 ${esc(formatDateTimeVN(n.created_at))}</span>
+            <span>${n.quote_number ? `Mở ${esc(n.quote_number)} →` : ''}</span>
+          </div>
+        </div>
+        ${n.is_read ? '' : '<span class="notif-unread-dot" title="Chưa đọc"></span>'}
+      </button>
+    `).join('');
+  }
+
+  function toggleNotifDropdown(e) {
+    if (e) e.stopPropagation();
+    closeUserDropdown();
+    const menu = document.getElementById('notifDropdownMenu');
+    if (!menu) return;
+    const willOpen = menu.classList.contains('hidden');
+    menu.classList.toggle('hidden');
+    if (willOpen) {
+      pollNotifications(true);
+    }
+  }
+
+  function closeNotifDropdown() {
+    document.getElementById('notifDropdownMenu')?.classList.add('hidden');
+  }
+
+  async function openNotification(notifId) {
+    const n = (state.notifications || []).find(x => x.id === notifId);
+    closeNotifDropdown();
+    if (!n) return;
+
+    if (!n.is_read) {
+      n.is_read = 1;
+      state.unreadNotifications = Math.max(0, state.unreadNotifications - 1);
+      renderNotifications();
+      api(`/api/notifications/${notifId}/read`, { method: 'POST' }).catch(() => {});
+    }
+
+    try {
+      await loadBootstrap();
+      if (n.quote_id) {
+        const exists = state.quotations.some(q => q.id === n.quote_id);
+        if (exists) {
+          await openQuoteToTab(n.quote_id, n.target_tab || 'flow2');
+          return;
+        }
+      }
+      if (n.target_tab) {
+        showTab(n.target_tab);
+      }
+    } catch (err) {
+      toast('Không thể mở mục thông báo: ' + err.message);
+    }
+  }
+
+  async function markAllNotificationsRead() {
+    try {
+      await api('/api/notifications/read-all', { method: 'POST' });
+      (state.notifications || []).forEach(n => { n.is_read = 1; });
+      state.unreadNotifications = 0;
+      renderNotifications();
+      toast('Đã đánh dấu đã đọc tất cả thông báo.');
+    } catch (err) {
+      toast('Lỗi: ' + err.message);
+    }
+  }
+
+  function clearReadNotifications() {
+    const readCount = (state.notifications || []).filter(n => n.is_read).length;
+    if (readCount === 0) {
+      toast('Hiện không có thông báo đã đọc nào để xóa.');
+      return;
+    }
+
+    openConfirmModal({
+      title: 'Xác Nhận Xóa Thông Báo Đã Đọc',
+      okText: 'Xác nhận Xóa',
+      isDanger: true,
+      messageHtml: `
+        Bạn có chắc chắn muốn xóa <strong>${readCount} thông báo đã đọc</strong> khỏi danh sách thông báo của bạn không?
+        <div style="margin-top:8px;font-size:12.5px;color:var(--muted);">
+          (Các thông báo chưa đọc vẫn sẽ được giữ nguyên.)
+        </div>
+      `,
+      onConfirm: async () => {
+        try {
+          await api('/api/notifications/clear-read', { method: 'DELETE' });
+          state.notifications = (state.notifications || []).filter(n => !n.is_read);
+          renderNotifications();
+          toast(`Đã xóa ${readCount} thông báo đã đọc.`);
+        } catch (err) {
+          toast('Lỗi: ' + err.message);
+        }
+      }
+    });
+  }
+
+  async function pollNotifications(silent = false) {
+    if (!state.authToken) return;
+    try {
+      const data = await api('/api/notifications');
+      const incoming = data.notifications || [];
+      const newestUnread = incoming.find(n => !n.is_read && n.id > state.lastSeenNotifId);
+      if (newestUnread && !silent && state.lastSeenNotifId > 0) {
+        toast(`🔔 ${newestUnread.title}`);
+        // Tải lại danh sách báo giá nếu có thông báo mới về báo giá
+        loadBootstrap().then(() => {
+          if (state.activeTab === 'quotes') renderQuotesList();
+        }).catch(() => {});
+      }
+      if (incoming.length > 0) {
+        state.lastSeenNotifId = Math.max(state.lastSeenNotifId, incoming[0].id);
+      }
+      state.notifications = incoming;
+      state.unreadNotifications = Number(data.unread_count || 0);
+      renderNotifications();
+    } catch {}
+  }
+
+  function startNotifPolling() {
+    stopNotifPolling();
+    state.notifPollTimer = setInterval(() => {
+      if (state.authToken && !document.hidden) {
+        pollNotifications(false);
+      }
+    }, 20000);
+  }
+
+  function stopNotifPolling() {
+    if (state.notifPollTimer) {
+      clearInterval(state.notifPollTimer);
+      state.notifPollTimer = null;
+    }
+  }
+
   function toggleUserDropdown(e) {
     if (e) e.stopPropagation();
+    closeNotifDropdown();
     document.getElementById('userDropdownMenu')?.classList.toggle('hidden');
   }
 
@@ -6402,6 +6590,10 @@ xmlns="http://www.w3.org/TR/REC-html40">
     const wrap = document.getElementById('userMenuWrap');
     if (wrap && !wrap.contains(e.target)) {
       closeUserDropdown();
+    }
+    const notifWrap = document.getElementById('notifMenuWrap');
+    if (notifWrap && !notifWrap.contains(e.target)) {
+      closeNotifDropdown();
     }
   });
 
@@ -6424,6 +6616,11 @@ xmlns="http://www.w3.org/TR/REC-html40">
     logout,
     toggleUserDropdown,
     closeUserDropdown,
+    toggleNotifDropdown,
+    closeNotifDropdown,
+    openNotification,
+    markAllNotificationsRead,
+    clearReadNotifications,
     openChangePasswordModal,
     closeChangePasswordModal,
     submitChangePassword,

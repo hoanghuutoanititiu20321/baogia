@@ -151,6 +151,21 @@ function initDatabase() {
       created_at TEXT DEFAULT (datetime('now', '+7 hours'))
     );
 
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recipient_username TEXT NOT NULL,
+      actor_username TEXT,
+      actor_name TEXT,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      quote_id INTEGER,
+      quote_number TEXT,
+      target_tab TEXT DEFAULT 'flow2',
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now', '+7 hours'))
+    );
+
     CREATE TABLE IF NOT EXISTS tower_models (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       product_line TEXT NOT NULL,
@@ -442,6 +457,66 @@ function seedSampleQuotations() {
   // Handled on initial creation
 }
 
+function createNotification({
+  recipient_username,
+  actor_username = '',
+  actor_name = '',
+  type = 'system',
+  title = '',
+  message = '',
+  quote_id = null,
+  quote_number = '',
+  target_tab = 'flow2'
+}) {
+  if (!recipient_username || !title) return;
+  try {
+    db.prepare(`
+      INSERT INTO notifications (
+        recipient_username, actor_username, actor_name, type, title, message,
+        quote_id, quote_number, target_tab, is_read, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, datetime('now', '+7 hours'))
+    `).run(
+      recipient_username, actor_username, actor_name, type, title, message,
+      quote_id || null, quote_number || '', target_tab || 'flow2'
+    );
+  } catch (err) {
+    console.error('Create notification error:', err);
+  }
+}
+
+function notifyUsersList(usernames, payload) {
+  const unique = [...new Set((usernames || []).filter(Boolean))];
+  unique.forEach(u => createNotification({ ...payload, recipient_username: u }));
+}
+
+function notifyApprovers(excludeUsername, payload) {
+  try {
+    const allUsers = db.prepare('SELECT * FROM users WHERE is_active = 1').all();
+    const recipients = allUsers
+      .filter(u => {
+        if (u.username === excludeUsername) return false;
+        const p = parseUserPermissions(u);
+        return u.role === 'admin' || u.role === 'manager' || p.canApproveQuote;
+      })
+      .map(u => u.username);
+    notifyUsersList(recipients, payload);
+  } catch (err) {
+    console.error('notifyApprovers error:', err);
+  }
+}
+
+function notifyAllActiveUsers(excludeUsername, payload) {
+  try {
+    const allUsers = db.prepare('SELECT username FROM users WHERE is_active = 1').all();
+    const recipients = allUsers
+      .map(u => u.username)
+      .filter(un => un !== excludeUsername);
+    notifyUsersList(recipients, payload);
+  } catch (err) {
+    console.error('notifyAllActiveUsers error:', err);
+  }
+}
+
 initDatabase();
 
 module.exports = {
@@ -453,6 +528,10 @@ module.exports = {
   getDefaultPermissionsForRole,
   parseUserPermissions,
   logAudit,
+  createNotification,
+  notifyUsersList,
+  notifyApprovers,
+  notifyAllActiveUsers,
   getPumpSpecHint,
   getTowerDimensionHint
 };

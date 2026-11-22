@@ -294,6 +294,29 @@
 
       <div class="header-controls">
 
+        <!-- Notification Bell Dropdown -->
+        <div class="notif-menu-wrap" id="notifMenuWrap">
+          <button type="button" class="notif-bell-btn" id="notifBellBtn" onclick="App.toggleNotifDropdown(event)" title="Thông báo hệ thống" aria-label="Thông báo">
+            <svg class="notif-bell-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <span class="notif-badge hidden" id="notifBadge">0</span>
+          </button>
+
+          <div id="notifDropdownMenu" class="notif-dropdown-menu hidden">
+            <div class="notif-dropdown-header">
+              <strong id="notifHeaderTitle">Thông báo</strong>
+              <div class="notif-header-actions">
+                <button type="button" class="notif-link-btn" onclick="App.markAllNotificationsRead()">Đọc tất cả</button>
+                <button type="button" class="notif-link-btn danger" onclick="App.clearReadNotifications()">Xóa đã đọc</button>
+              </div>
+            </div>
+            <div id="notifListContainer" class="notif-list">
+              <div class="notif-empty">Hiện chưa có thông báo nào.</div>
+            </div>
+          </div>
+        </div>
 
         <!-- User Account Dropdown -->
         <div class="user-menu-wrap" id="userMenuWrap">
