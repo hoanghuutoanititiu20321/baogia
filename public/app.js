@@ -26,12 +26,24 @@ const App = (() => {
       modelCode: '55',
       flowSearch: '',
       projectName: '',
-      customerName: ''
+      customerName: '',
+      excludedComponents: {},
+      excludedDefaultInsts: {},
+      specDetailLevel: 'basic',
+      mgmtFeePercent: 5,
+      vatPercent: 8,
+      noteInstallTrans: 'Giá trên chưa bao gồm chi phí lắp đặt và vận chuyển.'
     },
 
-    // Flow 2 active quotation state
+    // Flow 2 active quotation state & multi-area / grouping UI helpers
     activeQuote: null,
     revisionsList: [],
+    quickAddTargetSecIdx: 0,
+    quickTowerProdLine: 'FSD 0.5',
+    quickTowerModelCode: '55',
+    quickTowerInsertMode: 'itemized',
+    selectedGroupItemKeys: [],
+    customGroupNameInput: '',
 
     // Catalog & filter state
     catFilterProd: 'ALL',
@@ -109,6 +121,320 @@ const App = (() => {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
   };
+
+  // ===========================================================================
+  // SHARED CONFIG, SPEC LEVEL (MÃ 11) & COMPONENT BREAKDOWN HELPERS (MÃ 03-05)
+  // ===========================================================================
+  function formatNumberDots(numStr) {
+    const clean = String(numStr || '').replace(/,/g, '').trim();
+    const n = Number(clean);
+    if (!Number.isFinite(n)) return numStr;
+    if (Math.abs(n) >= 1000 && Number.isInteger(n)) {
+      return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+    return String(numStr).trim();
+  }
+
+  function formatSpecForLevel(specText, level = 'detailed') {
+    const raw = String(specText || '').trim();
+    if (!raw || level !== 'basic') return raw;
+
+    // Quạt hút: "2,100 CMH   750 Pa   1.5 Kw, 3phase ,380V,50Hz, 4P,IE3" -> "2.100 CMH, 750 Pa"
+    const flowMatch = raw.match(/([\d.,]+)\s*(CMH|CMM|m³\/min|m3\/min)/i);
+    const paMatch = raw.match(/([\d.,]+)\s*Pa\b/i);
+    if (flowMatch && paMatch) {
+      return `${formatNumberDots(flowMatch[1])} ${flowMatch[2].toUpperCase()}, ${formatNumberDots(paMatch[1])} Pa`;
+    }
+
+    // Bơm tuần hoàn: "385 L/min x 10 m x 2.2 kW" -> "385 L/min x 10 m"
+    if (/L\/min/i.test(raw) && /\bkW\b/i.test(raw)) {
+      return raw
+        .replace(/\s*[x×]\s*[\d.,]+\s*kW\b[^,;)]*/ig, '')
+        .replace(/\s*,\s*3\s*pha(se)?.*$/i, '')
+        .trim();
+    }
+
+    // Tổng quát: ẩn thông số điện/động cơ chi tiết (kW, 3phase/3 pha, 380V, 50Hz, 4P, IE3...)
+    const stripped = raw
+      .replace(/\bMotor\s*[\d.,]+\s*kW\b/ig, '')
+      .replace(/[\d.,]+\s*kW\b/ig, '')
+      .replace(/\b[13]\s*pha(se)?\b/ig, '')
+      .replace(/\b\d{3}\s*V\b/ig, '')
+      .replace(/\b[56]0\s*Hz\b/ig, '')
+      .replace(/\b[2468]P\b/g, '')
+      .replace(/\bIE[1-4]\b/ig, '')
+      .replace(/\(\s*[,·\s-]*\)/g, '')
+      .replace(/[,·]+\s*[,·]+/g, ', ')
+      .replace(/^[\s,·-]+|[\s,·-]+$/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    return stripped || raw;
+  }
+
+  function getDefaultInstrumentsCatalog() {
+    return (state.equipment || []).filter(e => e.category === 'instrument' && e.is_default_included);
+  }
+
+  function computeDefaultInstDeduction(excludedDefaultInsts = {}) {
+    const defaults = getDefaultInstrumentsCatalog();
+    let deductCost = 0;
+    let deductBase = 0;
+    const excludedNames = [];
+    defaults.forEach(d => {
+      if (excludedDefaultInsts && excludedDefaultInsts[d.id]) {
+        const qty = Math.max(1, Number(d.default_qty || 1));
+        const base = Number(d.base_price || 0) * qty;
+        const cost = (d.cost_price !== null && d.cost_price !== undefined)
+          ? Number(d.cost_price) * qty
+          : Math.round(base / 2);
+        deductBase += base;
+        deductCost += cost;
+        excludedNames.push(d.name_vi);
+      }
+    });
+    return { deductCost, deductBase, excludedNames, totalCount: defaults.length };
+  }
+
+  function buildTowerComponentBreakdown(m, excludedComps = {}, excludedDefaultInsts = {}) {
+    if (!m) return null;
+    const instDed = computeDefaultInstDeduction(excludedDefaultInsts);
+    const towerBaseFull = Number(m.tower_base || 0);
+    const towerCostFull = (m.tower_cost !== null && m.tower_cost !== undefined) ? Number(m.tower_cost) : null;
+    return {
+      tower: {
+        key: 'tower',
+        label: `Hệ tháp (${m.product_line} - M${m.model_code})`,
+        shortLabel: 'Hệ tháp',
+        base: Math.max(0, towerBaseFull - instDed.deductBase),
+        cost: towerCostFull !== null ? Math.max(0, towerCostFull - instDed.deductCost) : null,
+        base_full: towerBaseFull,
+        cost_full: towerCostFull,
+        included: !excludedComps.tower
+      },
+      fan: {
+        key: 'fan',
+        label: `Quạt hút (${m.fan_model || ''})`,
+        shortLabel: 'Quạt hút',
+        base: Number(m.fan_base || 0),
+        cost: (m.fan_cost !== null && m.fan_cost !== undefined) ? Number(m.fan_cost) : null,
+        included: !excludedComps.fan
+      },
+      pump: {
+        key: 'pump',
+        label: `Bơm tuần hoàn (${m.pump_model || ''})`,
+        shortLabel: 'Bơm tuần hoàn',
+        base: Number(m.pump_base || 0),
+        cost: (m.pump_cost !== null && m.pump_cost !== undefined) ? Number(m.pump_cost) : null,
+        included: !excludedComps.pump
+      },
+      panel: {
+        key: 'panel',
+        label: 'Tủ điện điều khiển',
+        shortLabel: 'Tủ điện',
+        base: Number(m.panel_base || 0),
+        cost: (m.panel_cost !== null && m.panel_cost !== undefined) ? Number(m.panel_cost) : null,
+        included: !excludedComps.panel
+      },
+      stage: {
+        key: 'stage',
+        label: 'Hệ sắt Stage & Ống khói',
+        shortLabel: 'Hệ sắt Stage',
+        base: Number(m.stage_base || 0),
+        cost: (m.stage_cost !== null && m.stage_cost !== undefined) ? Number(m.stage_cost) : null,
+        included: !excludedComps.stage
+      }
+    };
+  }
+
+  function buildTowerSubLinesFromModel(m, excludedComps = {}, excludedDefaultInsts = {}) {
+    if (!m) return [];
+    const defaults = getDefaultInstrumentsCatalog();
+    const lines = [
+      { text: '込む Bao gồm :', right_text: '', remark: '', is_header: true }
+    ];
+    if (!excludedComps.stage) {
+      lines.push({
+        text: `- Stage,Ladder, 煙thang,sàn thao tác, ống khói: ${m.specs?.stack_dim || 'φ 350 x 850 H'}`,
+        right_text: '',
+        remark: '',
+        component_key: 'stage'
+      });
+    }
+    if (!excludedComps.tower) {
+      const keptInsts = defaults.filter(d => !excludedDefaultInsts[d.id]);
+      if (keptInsts.length > 0) {
+        lines.push({ text: '- 計装品Thiết bị đi kèm mặc định', right_text: 'x 1 set', remark: '', component_key: 'tower' });
+        keptInsts.forEach(d => {
+          lines.push({
+            text: `   + ${d.name_jp ? d.name_jp + ' ' : ''}${d.name_vi} (x${d.default_qty || 1} - đã gồm)`,
+            right_text: '',
+            remark: '',
+            is_default_inst: true,
+            default_inst_id: d.id,
+            component_key: 'tower'
+          });
+        });
+      }
+    }
+    if (!excludedComps.fan) {
+      lines.push({
+        text: `- 排気ファンQuạt hút ${m.fan_model}`,
+        right_text: 'x 1 set',
+        remark: 'KYOWA',
+        component_key: 'fan'
+      });
+      lines.push({
+        text: `   ${m.specs?.fan_spec || `${fmtVnd(m.flow_cmh)} CMH   ${m.fan_pressure_pa} Pa   ${m.motor_kw} Kw, 3phase ,380V,50Hz, 4P,IE3`}`,
+        right_text: '',
+        remark: 'Motor Toshiba VN',
+        is_spec_box: true,
+        component_key: 'fan'
+      });
+    }
+    if (!excludedComps.pump) {
+      lines.push({
+        text: `- 循環ポンプ Bơm tuần hoàn   ${m.pump_model}`,
+        right_text: 'x 1 set',
+        remark: 'KYOWA JP',
+        component_key: 'pump'
+      });
+      lines.push({
+        text: `   ${m.specs?.pump_spec || m.pump_model}`,
+        right_text: '',
+        remark: '',
+        is_spec_box: true,
+        component_key: 'pump'
+      });
+    }
+    if (!excludedComps.panel) {
+      lines.push({
+        text: '- 制御盤(INV)・配線Tủ điều khiển + Đấu dây 2m',
+        right_text: 'x 1 set',
+        remark: '',
+        component_key: 'panel'
+      });
+    }
+    return lines;
+  }
+
+  function hydrateTowerBundleBreakdown(it, q, sec) {
+    if (!it || it.item_type !== 'tower_bundle') return null;
+    if (it.component_breakdown && typeof it.component_breakdown === 'object') {
+      return it.component_breakdown;
+    }
+    const refProd = it.model_ref?.product_line || sec?.model_ref?.product_line || q?.selected_product_line;
+    const refCode = it.model_ref?.model_code || sec?.model_ref?.model_code || q?.selected_model_code;
+    if (!refProd || !refCode) return null;
+    const m = (state.models || []).find(x => x.product_line === refProd && String(x.model_code) === String(refCode));
+    if (!m) return null;
+    it.model_ref = { product_line: m.product_line, model_code: String(m.model_code) };
+    it.component_breakdown = buildTowerComponentBreakdown(m);
+    // Gắn component_key lên sub_lines cũ để khi xóa dòng con vẫn tự tính lại giá (Mã 04)
+    (it.sub_lines || []).forEach(sl => {
+      if (sl.component_key) return;
+      const txt = String(sl.text || '').toLowerCase();
+      if (txt.includes('stage') || txt.includes('ống khói') || txt.includes('sàn thao tác')) sl.component_key = 'stage';
+      else if (txt.includes('quạt') || txt.includes('排気ファン') || (sl.is_spec_box && (txt.includes('cmh') || txt.includes('pa')))) sl.component_key = 'fan';
+      else if (txt.includes('bơm') || txt.includes('循環ポンプ') || (sl.is_spec_box && txt.includes('l/min'))) sl.component_key = 'pump';
+      else if (txt.includes('tủ điều khiển') || txt.includes('tủ điện') || txt.includes('制御盤')) sl.component_key = 'panel';
+    });
+    return it.component_breakdown;
+  }
+
+  function recomputeTowerBundleFromBreakdown(it) {
+    if (!it || !it.component_breakdown) return;
+    let sumBase = 0;
+    let sumCost = 0;
+    let hasCost = false;
+    Object.values(it.component_breakdown).forEach(comp => {
+      if (comp && comp.included !== false) {
+        sumBase += Number(comp.base || 0);
+        if (comp.cost !== null && comp.cost !== undefined) {
+          sumCost += Number(comp.cost || 0);
+          hasCost = true;
+        }
+      }
+    });
+    it.base_price = Math.max(0, Math.round(sumBase));
+    if (hasCost) {
+      it.cost_price = Math.max(0, Math.round(sumCost));
+    }
+    it._keepExactUnitPrice = false;
+    it.unit_price = Math.max(0, Math.round(it.base_price * Number(it.adjustment ?? 1)));
+    it.total_price = Math.round(it.unit_price * Math.max(1, Number(it.quantity || 1)));
+  }
+
+  function sectionHasTower(sec) {
+    if (!sec) return false;
+    if (sec.model_ref && sec.model_ref.model_code) return true;
+    return (sec.items || []).some(it =>
+      it.included !== false &&
+      (it.item_type === 'tower' || it.item_type === 'tower_bundle')
+    );
+  }
+
+  function getSectionDefaultInstInfo(sec) {
+    const defaults = getDefaultInstrumentsCatalog();
+    const hasTower = sectionHasTower(sec);
+    const excludedMap = sec?.excluded_default_insts || {};
+    const optionCount = (sec?.items || []).filter(it =>
+      it.included !== false &&
+      (it.item_type === 'option' || it.item_type === 'instrument')
+    ).length;
+    return {
+      hasTower,
+      defaults: defaults.map(d => ({
+        ...d,
+        isIncluded: !excludedMap[d.id]
+      })),
+      optionCount
+    };
+  }
+
+  function computeF1Totals(cur) {
+    if (!cur) {
+      return {
+        prodCost: 0, prodBase: 0, mgmtPct: 5, mgmtCost: 0, mgmtBase: 0,
+        subtotalCost: 0, subtotalBase: 0, vatPct: 8, vatAmount: 0, totalAfterTax: 0,
+        selectedCount: 0, instDeductCost: 0, instDeductBase: 0, breakdown: null
+      };
+    }
+    const excl = state.f1.excludedComponents || {};
+    const exclInsts = state.f1.excludedDefaultInsts || {};
+    const instDed = excl.tower ? { deductCost: 0, deductBase: 0 } : computeDefaultInstDeduction(exclInsts);
+    const breakdown = buildTowerComponentBreakdown(cur, excl, exclInsts);
+
+    let prodCost = 0;
+    let prodBase = 0;
+    let selectedCount = 0;
+    ['tower', 'fan', 'pump', 'panel', 'stage'].forEach(k => {
+      const c = breakdown[k];
+      if (c && c.included) {
+        selectedCount++;
+        prodBase += Number(c.base || 0);
+        if (c.cost !== null && c.cost !== undefined) {
+          prodCost += Number(c.cost || 0);
+        }
+      }
+    });
+
+    const mgmtPct = Math.min(100, Math.max(0, Number(state.f1.mgmtFeePercent ?? 5)));
+    const mgmtBase = Math.round(prodBase * (mgmtPct / 100));
+    const mgmtCost = Math.round(prodCost * (mgmtPct / 100));
+    const subtotalBase = prodBase + mgmtBase;
+    const subtotalCost = prodCost + mgmtCost;
+    const vatPct = Math.min(100, Math.max(0, Number(state.f1.vatPercent ?? 8)));
+    const vatAmount = Math.round(subtotalBase * (vatPct / 100));
+    const totalAfterTax = subtotalBase + vatAmount;
+
+    return {
+      prodCost, prodBase, mgmtPct, mgmtCost, mgmtBase,
+      subtotalCost, subtotalBase, vatPct, vatAmount, totalAfterTax,
+      selectedCount, instDeductCost: instDed.deductCost, instDeductBase: instDed.deductBase,
+      breakdown
+    };
+  }
 
   function toast(msg) {
     const c = document.getElementById('toastContainer');
@@ -426,44 +752,60 @@ const App = (() => {
     if (cur) state.f1.modelCode = String(cur.model_code);
 
     const showCost = state.permissions.canViewCost;
-    const defaultInstruments = state.equipment.filter(e => e.category === 'instrument' && e.is_default_included);
+    const defaultInstruments = getDefaultInstrumentsCatalog();
+    const specLevel = state.f1.specDetailLevel || 'basic';
+    const excl = state.f1.excludedComponents || {};
+    const exclInsts = state.f1.excludedDefaultInsts || {};
+    const f1Calc = computeF1Totals(cur);
+    const anyExcluded = Object.values(excl).some(Boolean) || Object.values(exclInsts).some(Boolean);
 
-    const lines = cur ? [
+    const fanDetailText = cur
+      ? (specLevel === 'basic'
+        ? `Model ${cur.fan_model} · ${fmtVnd(cur.flow_cmh)} CMH, ${fmtVnd(cur.fan_pressure_pa)} Pa`
+        : `Model ${cur.fan_model} · ${fmtVnd(cur.flow_cmh)} CMH, ${fmtVnd(cur.fan_pressure_pa)} Pa · Motor ${cur.motor_kw} kW (3phase, 380V, 50Hz, 4P, IE3)`)
+      : '';
+    const pumpSpecText = cur ? formatSpecForLevel(cur.specs?.pump_spec || cur.pump_model || '', specLevel) : '';
+
+    const coreLines = cur ? [
       {
+        key: 'tower',
         name: '1. Hệ tháp xử lý khí (FRP)',
-        detail: `Dòng ${cur.product_line} – Model ${cur.model_code} · Lưu lượng ${cur.flow_rate} m³/min (${fmtVnd(cur.flow_cmh)} CMH) · KT tham khảo: ${cur.specs?.tower_dim || ''} (FRP)`,
-        cost: cur.tower_cost,
-        base: cur.tower_base
+        detail: `Dòng ${cur.product_line} – Model ${cur.model_code} · Lưu lượng ${cur.flow_rate} m³/min (${fmtVnd(cur.flow_cmh)} CMH)${cur.specs?.tower_dim ? ` · KT tham khảo: ${cur.specs.tower_dim} (FRP)` : ''}${f1Calc.instDeductBase > 0 && !excl.tower ? ` · [Đã trừ TB đo bỏ chọn: -${fmtVnd(f1Calc.instDeductBase)} đ]` : ''}`,
+        cost: f1Calc.breakdown.tower.cost,
+        base: f1Calc.breakdown.tower.base,
+        included: !excl.tower
       },
       {
+        key: 'fan',
         name: '2. Quạt hút (Exhaust Fan)',
-        detail: `Model ${cur.fan_model} · Motor ${cur.motor_kw} kW · Áp suất ${cur.fan_pressure_pa} Pa (3phase, 380V, 50Hz, 4P, IE3)`,
+        detail: fanDetailText,
         cost: cur.fan_cost,
-        base: cur.fan_base
+        base: cur.fan_base,
+        included: !excl.fan
       },
       {
+        key: 'pump',
         name: '3. Bơm tuần hoàn (Circulation Pump)',
-        detail: `Model ${cur.pump_model} (${cur.specs?.pump_spec || ''})`,
+        detail: `Model ${cur.pump_model}${pumpSpecText && pumpSpecText !== cur.pump_model ? ` (${pumpSpecText})` : ''}`,
         cost: cur.pump_cost,
-        base: cur.pump_base
+        base: cur.pump_base,
+        included: !excl.pump
       },
       {
+        key: 'panel',
         name: '4. Tủ điện (Control Panel)',
         detail: 'Tủ điều khiển tiêu chuẩn, đấu dây',
         cost: cur.panel_cost,
-        base: cur.panel_base
+        base: cur.panel_base,
+        included: !excl.panel
       },
       {
+        key: 'stage',
         name: '5. Hệ sắt Stage',
         detail: `Stage, ladder (cầu thang), sàn thao tác, ống khói (${cur.specs?.stack_dim || ''})`,
         cost: cur.stage_cost,
-        base: cur.stage_base
-      },
-      {
-        name: '6. Chi phí quản lý, thiết kế (5%)',
-        detail: 'Chi phí quản lý dự án, bản vẽ thiết kế & vận hành thử (= 5% tổng 5 mục trên)',
-        cost: cur.mgmt_cost,
-        base: cur.mgmt_base
+        base: cur.stage_base,
+        included: !excl.stage
       }
     ] : [];
 
@@ -472,16 +814,19 @@ const App = (() => {
         <div class="card-header">
           <h2 class="card-title">Tra Cứu Cấu Hình & Báo Giá Cơ Bản</h2>
           <div class="row">
-            <button class="btn btn-primary" onclick="App.startDetailedFromF1('tower_bundle')">
+            <button class="btn btn-primary" onclick="App.startDetailedFromF1('basic_quote')" title="Xuất báo giá cơ bản 1 giá tổng, ẩn đơn giá lẻ & rút gọn thông số điện">
+              📋 Tạo Báo Giá Cơ Bản →
+            </button>
+            <button class="btn btn-navy" onclick="App.startDetailedFromF1('tower_bundle')">
               Báo Giá Chi Tiết (Gộp 1 Set – Mẫu Taikisha) →
             </button>
-            <button class="btn btn-navy" onclick="App.startDetailedFromF1('itemized')">
+            <button class="btn" onclick="App.startDetailedFromF1('itemized')">
               Báo Giá Chi Tiết (Tách rời từng hạng mục) →
             </button>
           </div>
         </div>
 
-        <div class="grid-4" style="margin-bottom: 14px;">
+        <div class="grid-4" style="margin-bottom: 12px;">
           <label class="field">
             1. Chọn Dòng sản phẩm (Tháp)
             <select onchange="App.setF1Product(this.value)">
@@ -510,9 +855,45 @@ const App = (() => {
         <div id="f1RecommendedBox">${buildF1RecommendedHtml()}</div>
 
         ${cur ? `
+          <div class="cfg-toolbar-bar">
+            <div class="cfg-pill-group">
+              <span class="cfg-pill-label">Thông số hiển thị:</span>
+              <button type="button" class="btn btn-sm ${specLevel === 'basic' ? 'btn-navy' : ''}" onclick="App.setF1SpecLevel('basic')" title="Ẩn thông số điện chi tiết (kW, 3 pha, 380V, 50Hz, 4P, IE3)">
+                Cơ bản (Gọn)
+              </button>
+              <button type="button" class="btn btn-sm ${specLevel === 'detailed' ? 'btn-navy' : ''}" onclick="App.setF1SpecLevel('detailed')" title="Hiển thị đầy đủ thông số kỹ thuật gốc">
+                Chi tiết (Đầy đủ)
+              </button>
+            </div>
+
+            <div class="cfg-pill-group">
+              <span class="cfg-pill-label">Phí QL & Thiết kế:</span>
+              <input type="number" class="num" min="0" max="100" step="0.5"
+                     style="width:58px;padding:3px 6px;font-weight:700;"
+                     value="${f1Calc.mgmtPct}"
+                     onchange="App.setF1MgmtPercent(this.value)">
+              <span style="font-size:12px;font-weight:700;color:var(--navy);">%</span>
+              <span style="margin:0 6px;color:#cbd5e1;">|</span>
+              <span class="cfg-pill-label">VAT:</span>
+              ${[0, 5, 8, 10].map(vp => `
+                <button type="button" class="btn btn-sm ${Number(f1Calc.vatPct) === vp ? 'btn-navy' : ''}"
+                        style="padding:2px 7px;font-size:11.5px;"
+                        onclick="App.setF1VatPercent(${vp})">${vp}%</button>
+              `).join('')}
+            </div>
+
+            ${anyExcluded ? `
+              <button type="button" class="btn btn-sm" style="border-color:var(--green);color:var(--green);" onclick="App.resetF1Components()">
+                ↺ Khôi phục đủ các hạng mục
+              </button>
+            ` : `
+              <span style="font-size:11.5px;color:var(--muted);"></span>
+            `}
+          </div>
+
           <div class="kpi-grid">
             <div class="kpi-box">
-              <div class="kpi-label">Cấu hình đang chọn</div>
+              <div class="kpi-label">Cấu hình đang chọn (${f1Calc.selectedCount}/5 hạng mục)</div>
               <div class="kpi-val">${esc(cur.product_line)} – Model ${esc(cur.model_code)}</div>
             </div>
             <div class="kpi-box">
@@ -521,13 +902,14 @@ const App = (() => {
             </div>
             ${showCost ? `
               <div class="kpi-box amber">
-                <div class="kpi-label">Tổng Giá Cost Nội Bộ (Sheet 1)</div>
-                <div class="kpi-val">${fmtVnd(cur.total_cost)} VND</div>
+                <div class="kpi-label">Tổng Giá Cost Nội Bộ ${anyExcluded ? '(Đã trừ bỏ)' : ''}</div>
+                <div class="kpi-val">${fmtVnd(f1Calc.subtotalCost)} VND</div>
               </div>
             ` : ''}
             <div class="kpi-box green">
-              <div class="kpi-label">Tổng Giá Báo Cơ Bản (Sheet 2)</div>
-              <div class="kpi-val">${fmtVnd(cur.total_base)} VND</div>
+              <div class="kpi-label">Tổng Báo Giá Cơ Bản ${f1Calc.vatPct > 0 ? `(Trước VAT / Sau VAT ${f1Calc.vatPct}%)` : '(Chưa VAT)'}</div>
+              <div class="kpi-val">${fmtVnd(f1Calc.subtotalBase)} VND</div>
+              ${f1Calc.vatPct > 0 ? `<div style="font-size:12px;color:#166534;font-weight:600;margin-top:2px;">Sau VAT ${f1Calc.vatPct}%: ${fmtVnd(f1Calc.totalAfterTax)} VND</div>` : ''}
             </div>
           </div>
 
@@ -535,38 +917,95 @@ const App = (() => {
             <table class="data-table">
               <thead>
                 <tr>
-                  <th style="width: 24%; min-width: 170px;">Hạng mục cấu hình</th>
-                  <th style="min-width: 240px;">Thông số kỹ thuật & Chi tiết tiêu chuẩn</th>
-                  ${showCost ? '<th class="r cost-col" style="width: 16%;">Giá Cost nội bộ (VND)</th>' : ''}
-                  <th class="r" style="width: 18%;">Giá báo cơ bản (VND)</th>
+                  <th class="c" style="width:46px;" title="Tích chọn để đưa vào báo giá; bỏ tích để trừ đúng giá thành phần từ Data báo giá.xlsx">Chọn</th>
+                  <th style="width: 23%; min-width: 170px;">Hạng mục cấu hình</th>
+                  <th style="min-width: 240px;">Thông số kỹ thuật (${specLevel === 'basic' ? 'Bản gọn gửi khách' : 'Chi tiết đầy đủ'})</th>
+                  ${showCost ? '<th class="r cost-col" style="width: 15%;">Giá Cost nội bộ (VND)</th>' : ''}
+                  <th class="r" style="width: 17%;">Giá báo cơ bản (VND)</th>
                 </tr>
               </thead>
               <tbody>
-                ${lines.map(l => `
-                  <tr>
-                    <td><strong>${esc(l.name)}</strong></td>
-                    <td>${esc(l.detail)}</td>
-                    ${showCost ? `<td class="r cost-col">${fmtVnd(l.cost)}</td>` : ''}
-                    <td class="r"><strong>${fmtVnd(l.base)}</strong></td>
+                ${coreLines.map(l => `
+                  <tr class="${l.included ? '' : 'row-excluded'}">
+                    <td class="c">
+                      <input type="checkbox" ${l.included ? 'checked' : ''}
+                             style="width:16px;height:16px;cursor:pointer;"
+                             onchange="App.toggleF1Component('${l.key}', this.checked)">
+                    </td>
+                    <td>
+                      <strong class="excl-strike">${esc(l.name)}</strong>
+                      ${!l.included ? `<div style="margin-top:2px;"><span class="tag-excluded">-${fmtVnd(l.base)} đ</span></div>` : ''}
+                    </td>
+                    <td class="excl-strike">${esc(l.detail)}</td>
+                    ${showCost ? `<td class="r cost-col">${l.included ? fmtVnd(l.cost) : '0'}</td>` : ''}
+                    <td class="r"><strong>${l.included ? fmtVnd(l.base) : '0'}</strong></td>
                   </tr>
                 `).join('')}
+                <tr class="sub-row">
+                  <td colspan="3">Cộng thiết bị sản xuất đã chọn (${f1Calc.selectedCount}/5 hạng mục — đúng giá thành phần từ Data báo giá.xlsx)</td>
+                  ${showCost ? `<td class="r cost-col">${fmtVnd(f1Calc.prodCost)}</td>` : ''}
+                  <td class="r">${fmtVnd(f1Calc.prodBase)}</td>
+                </tr>
+                <tr>
+                  <td class="c">✓</td>
+                  <td><strong>6. Chi phí quản lý, thiết kế (${f1Calc.mgmtPct}%)</strong></td>
+                  <td>Chi phí quản lý dự án, bản vẽ thiết kế & vận hành thử (= ${f1Calc.mgmtPct}% × ${fmtVnd(f1Calc.prodBase)} đ)</td>
+                  ${showCost ? `<td class="r cost-col">${fmtVnd(f1Calc.mgmtCost)}</td>` : ''}
+                  <td class="r"><strong>${fmtVnd(f1Calc.mgmtBase)}</strong></td>
+                </tr>
                 <tr class="total-row">
-                  <td colspan="2">Tổng báo giá cơ bản (Hệ tháp + Quạt + Bơm + Tủ điện + Hệ sắt Stage + Quản lý, thiết kế)</td>
-                  ${showCost ? `<td class="r cost-col">${fmtVnd(cur.total_cost)}</td>` : ''}
-                  <td class="r">${fmtVnd(cur.total_base)}</td>
+                  <td colspan="3">TỔNG BÁO GIÁ CƠ BẢN TRƯỚC THUẾ (Thiết bị đã chọn + Phí QL, thiết kế ${f1Calc.mgmtPct}%)</td>
+                  ${showCost ? `<td class="r cost-col">${fmtVnd(f1Calc.subtotalCost)}</td>` : ''}
+                  <td class="r">${fmtVnd(f1Calc.subtotalBase)}</td>
+                </tr>
+                <tr>
+                  <td colspan="3" class="r"><strong>Thuế GTGT (VAT ${f1Calc.vatPct}%)</strong></td>
+                  ${showCost ? '<td class="r cost-col">—</td>' : ''}
+                  <td class="r"><strong>${fmtVnd(f1Calc.vatAmount)}</strong></td>
+                </tr>
+                <tr class="sub-row" style="background:#dcfce7;">
+                  <td colspan="3" class="r"><strong>TỔNG CỘNG SAU THUẾ (After TAX)</strong></td>
+                  ${showCost ? '<td class="r cost-col">—</td>' : ''}
+                  <td class="r" style="color:var(--green-dark);font-size:14.5px;"><strong>${fmtVnd(f1Calc.totalAfterTax)} VND</strong></td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           <div class="alert-box alert-warn" style="margin-top: 12px; margin-bottom: 0;">
-            <strong>* Lưu ý phạm vi cấu hình cơ bản (Quy tắc chống cộng trùng):</strong>
-            <ul style="margin: 4px 0 0 18px; padding: 0;">
-              <li><strong>Thiết bị đi kèm mặc định (Đã tính trong giá Hệ tháp):</strong>
-                ${defaultInstruments.map(d => `<span class="tag-included">${esc(d.name_vi)} x ${d.default_qty}</span>`).join(' ')}
-              </li>
-              <li><strong>Chưa bao gồm:</strong> Chi phí vận chuyển và chi phí lắp đặt tại công trình (sẽ được bổ sung tại <em>Báo giá chi tiết</em>).</li>
-            </ul>
+            <strong>* Phạm vi thiết bị mặc định & Ghi chú gửi khách hàng:</strong>
+            <div style="margin-top:6px;">
+              <div style="margin-bottom:6px;">
+                <strong>Thiết bị đo đi kèm mặc định trong Hệ tháp</strong>
+                <span style="font-size:11.5px;color:#78350f;">(Đã gồm trong giá Hệ tháp; bỏ tích nếu muốn trừ đúng giá danh mục Sheet 3):</span>
+              </div>
+              <div>
+                ${defaultInstruments.map(d => {
+                  const isOn = !excl.tower && !exclInsts[d.id];
+                  return `
+                    <label class="inst-toggle-chip ${isOn ? '' : 'is-off'}" title="Giá gốc Sheet 3: ${fmtVnd(d.base_price)} đ / ${d.unit}">
+                      <input type="checkbox" ${isOn ? 'checked' : ''} ${excl.tower ? 'disabled' : ''}
+                             onchange="App.toggleF1DefaultInst(${d.id}, this.checked)">
+                      ${esc(d.name_vi)} x ${d.default_qty}
+                      <span style="font-size:10.5px;opacity:0.8;">(${fmtVnd(d.base_price)} đ)</span>
+                    </label>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+            <div style="margin-top:10px;padding-top:8px;border-top:1px dashed #fcd34d;">
+              <label class="field">
+                Ghi chú Lắp đặt & Vận chuyển cho Báo giá cơ bản (mặc định chưa gồm, có thể sửa theo trường hợp):
+                <div class="note-preset-row">
+                  <button type="button" class="btn btn-sm" onclick="App.applyF1NotePreset('none')">Chưa gồm lắp đặt & vận chuyển</button>
+                  <button type="button" class="btn btn-sm" onclick="App.applyF1NotePreset('ship_only')">Đã gồm vận chuyển, chưa lắp đặt</button>
+                  <button type="button" class="btn btn-sm" onclick="App.applyF1NotePreset('both')">Đã gồm cả vận chuyển & lắp đặt</button>
+                </div>
+                <input type="text" value="${esc(state.f1.noteInstallTrans || '')}"
+                       oninput="App.setF1NoteInstallTrans(this.value)"
+                       placeholder="Giá trên chưa bao gồm chi phí lắp đặt và vận chuyển.">
+              </label>
+            </div>
           </div>
         ` : ''}
       </div>
@@ -583,7 +1022,7 @@ const App = (() => {
                 <th style="min-width: 90px;">Model</th>
                 <th class="r">Lưu lượng (m³/min)</th>
                 <th class="r">Hệ tháp</th>
-                <th style="min-width: 140px;">Quạt (Motor / Pa)</th>
+                <th style="min-width: 140px;">Quạt (${specLevel === 'basic' ? 'Lưu lượng / Áp suất' : 'Motor / Pa'})</th>
                 <th class="r">Giá Quạt</th>
                 <th style="min-width: 130px;">Dòng Bơm</th>
                 <th class="r">Giá Bơm</th>
@@ -601,7 +1040,10 @@ const App = (() => {
                   <td><strong>Model ${esc(m.model_code)}</strong></td>
                   <td class="r">${m.flow_rate}</td>
                   <td class="r">${fmtVnd(m.tower_base)}</td>
-                  <td>${esc(m.fan_model)} (${m.motor_kw}kW, ${m.fan_pressure_pa}Pa)</td>
+                  <td>${specLevel === 'basic'
+                    ? `${esc(m.fan_model)} (${fmtVnd(m.flow_cmh)} CMH, ${fmtVnd(m.fan_pressure_pa)} Pa)`
+                    : `${esc(m.fan_model)} (${m.motor_kw}kW, ${m.fan_pressure_pa}Pa)`
+                  }</td>
                   <td class="r">${fmtVnd(m.fan_base)}</td>
                   <td>${esc(m.pump_model)}</td>
                   <td class="r">${fmtVnd(m.pump_base)}</td>
@@ -617,6 +1059,57 @@ const App = (() => {
         </div>
       </div>
     `;
+  }
+
+  function toggleF1Component(key, checked) {
+    state.f1.excludedComponents = state.f1.excludedComponents || {};
+    state.f1.excludedComponents[key] = !checked;
+    renderFlow1();
+  }
+
+  function toggleF1DefaultInst(eqId, checked) {
+    state.f1.excludedDefaultInsts = state.f1.excludedDefaultInsts || {};
+    state.f1.excludedDefaultInsts[eqId] = !checked;
+    renderFlow1();
+  }
+
+  function resetF1Components() {
+    state.f1.excludedComponents = {};
+    state.f1.excludedDefaultInsts = {};
+    renderFlow1();
+    toast('Đã khôi phục đủ 5 hạng mục & 4 thiết bị đo mặc định!');
+  }
+
+  function setF1SpecLevel(level) {
+    state.f1.specDetailLevel = level === 'detailed' ? 'detailed' : 'basic';
+    renderFlow1();
+  }
+
+  function setF1MgmtPercent(val) {
+    const n = Math.min(100, Math.max(0, Number(val || 0)));
+    state.f1.mgmtFeePercent = Number.isFinite(n) ? n : 5;
+    renderFlow1();
+  }
+
+  function setF1VatPercent(val) {
+    const n = Math.min(100, Math.max(0, Number(val || 0)));
+    state.f1.vatPercent = Number.isFinite(n) ? n : 8;
+    renderFlow1();
+  }
+
+  function setF1NoteInstallTrans(val) {
+    state.f1.noteInstallTrans = val;
+  }
+
+  function applyF1NotePreset(preset) {
+    if (preset === 'none') {
+      state.f1.noteInstallTrans = 'Giá trên chưa bao gồm chi phí lắp đặt và vận chuyển.';
+    } else if (preset === 'ship_only') {
+      state.f1.noteInstallTrans = 'Giá trên đã bao gồm chi phí vận chuyển, chưa bao gồm chi phí lắp đặt tại công trình.';
+    } else if (preset === 'both') {
+      state.f1.noteInstallTrans = 'Kích thước tháp chỉ dùng để tham khảo, kích thước chính xác phụ thuộc vào bản vẽ. BG trên chưa bao gồm phí nâng hạ và cẩu đưa vào vị trí lắp đặt.';
+    }
+    renderFlow1();
   }
 
 
@@ -666,6 +1159,99 @@ const App = (() => {
     renderFlow1();
   }
 
+  function buildItemsForTowerModel(m, insertMode = 'itemized', excludedComps = {}, excludedDefaultInsts = {}, idPrefix = '') {
+    const pfx = idPrefix || ('t' + Date.now());
+    const prodSlug = m.product_line.replace(/\s+/g, '-').replace(/L$/, '');
+    const towerTitleCode = `${prodSlug.split('-')[0]}-${m.model_code}-${prodSlug.split('-')[1] || '1.0'}`;
+    const breakdown = buildTowerComponentBreakdown(m, excludedComps, excludedDefaultInsts);
+
+    if (insertMode === 'tower_bundle') {
+      let sumBase = 0;
+      let sumCost = 0;
+      let hasCost = false;
+      Object.values(breakdown).forEach(c => {
+        if (c.included) {
+          sumBase += Number(c.base || 0);
+          if (c.cost !== null && c.cost !== undefined) {
+            sumCost += Number(c.cost || 0);
+            hasCost = true;
+          }
+        }
+      });
+      return [{
+        id: `${pfx}-bundle`,
+        stt: '1',
+        item_type: 'tower_bundle',
+        included: true,
+        merge_group: '',
+        model_ref: { product_line: m.product_line, model_code: String(m.model_code) },
+        component_breakdown: breakdown,
+        name_jp: '洗浄塔',
+        name_vi: `Tháp xử lý   ${towerTitleCode}   ${m.specs?.tower_dim || ''}   (FRP)`,
+        specs_text: '',
+        unit: 'Set/Bộ',
+        quantity: 1,
+        cost_price: hasCost ? sumCost : null,
+        base_price: sumBase,
+        adjustment: 1,
+        unit_price: sumBase,
+        total_price: sumBase,
+        remark: 'KYOWA VN',
+        sub_lines: buildTowerSubLinesFromModel(m, excludedComps, excludedDefaultInsts)
+      }];
+    }
+
+    const defaults = getDefaultInstrumentsCatalog();
+    const keptDefaults = defaults.filter(d => !excludedDefaultInsts[d.id]);
+    const instNote = keptDefaults.length > 0
+      ? `Đã gồm: ${keptDefaults.map(d => `${d.name_vi} x${d.default_qty || 1}`).join(', ')}`
+      : 'Không bao gồm thiết bị đo mặc định';
+
+    return [
+      {
+        id: `${pfx}-tower`, stt: '1', item_type: 'tower', included: !excludedComps.tower, merge_group: '',
+        model_ref: { product_line: m.product_line, model_code: String(m.model_code) },
+        name_jp: '洗浄塔', name_vi: `Hệ tháp xử lý ${m.product_line} - Model ${m.model_code} (${m.flow_rate} m³/min, FRP)`,
+        specs_text: `KT tham khảo: ${m.specs?.tower_dim || ''} · ${instNote}`,
+        unit: 'Set/Bộ', quantity: 1,
+        cost_price: breakdown.tower.cost, base_price: breakdown.tower.base, adjustment: 1,
+        unit_price: breakdown.tower.base, total_price: breakdown.tower.base, remark: 'KYOWA VN', sub_lines: []
+      },
+      {
+        id: `${pfx}-fan`, stt: '2', item_type: 'fan', included: !excludedComps.fan, merge_group: '',
+        name_jp: '排気ファン', name_vi: `Quạt hút ${m.fan_model} (FRP)`,
+        specs_text: m.specs?.fan_spec || `${fmtVnd(m.flow_cmh)} CMH   ${m.fan_pressure_pa} Pa   ${m.motor_kw} Kw, 3phase ,380V,50Hz, 4P,IE3`,
+        unit: 'Set/Bộ', quantity: 1,
+        cost_price: breakdown.fan.cost, base_price: breakdown.fan.base, adjustment: 1,
+        unit_price: breakdown.fan.base, total_price: breakdown.fan.base, remark: 'KYOWA', sub_lines: []
+      },
+      {
+        id: `${pfx}-pump`, stt: '3', item_type: 'pump', included: !excludedComps.pump, merge_group: '',
+        name_jp: '循環ポンプ', name_vi: `Bơm tuần hoàn ${m.pump_model}`,
+        specs_text: m.specs?.pump_spec || m.pump_model,
+        unit: 'Set/Bộ', quantity: 1,
+        cost_price: breakdown.pump.cost, base_price: breakdown.pump.base, adjustment: 1,
+        unit_price: breakdown.pump.base, total_price: breakdown.pump.base, remark: 'KYOWA JP', sub_lines: []
+      },
+      {
+        id: `${pfx}-panel`, stt: '4', item_type: 'panel', included: !excludedComps.panel, merge_group: '',
+        name_jp: '制御盤', name_vi: 'Tủ điện điều khiển + Đấu dây',
+        specs_text: '',
+        unit: 'Set/Bộ', quantity: 1,
+        cost_price: breakdown.panel.cost, base_price: breakdown.panel.base, adjustment: 1,
+        unit_price: breakdown.panel.base, total_price: breakdown.panel.base, remark: 'KYOWA VN', sub_lines: []
+      },
+      {
+        id: `${pfx}-stage`, stt: '5', item_type: 'stage', included: !excludedComps.stage, merge_group: '',
+        name_jp: '架台・階段', name_vi: 'Hệ sắt Stage, Ladder, sàn thao tác, ống khói',
+        specs_text: `Ống khói: ${m.specs?.stack_dim || 'φ 350 x 850 H'}`,
+        unit: 'Set/Bộ', quantity: 1,
+        cost_price: breakdown.stage.cost, base_price: breakdown.stage.base, adjustment: 1,
+        unit_price: breakdown.stage.base, total_price: breakdown.stage.base, remark: 'KYOWA VN', sub_lines: []
+      }
+    ];
+  }
+
   function startDetailedFromF1(mode = 'tower_bundle') {
     const m = getSelectedF1Model();
     if (!m) return;
@@ -674,14 +1260,50 @@ const App = (() => {
     const seq = String(state.quotations.length + 26).padStart(3, '0');
     const baseCode = `2601-${seq}`;
     const quoteNumber = `${baseCode}-01`;
-    const prodSlug = m.product_line.replace(/\s+/g, '-').replace(/L$/, '');
-    const towerTitleCode = `${prodSlug.split('-')[0]}-${m.model_code}-${prodSlug.split('-')[1] || '1.0'}`;
 
-    const prodCostSum = (m.tower_cost || 0) + (m.fan_cost || 0) + (m.pump_cost || 0) + (m.panel_cost || 0) + (m.stage_cost || 0);
-    const prodBaseSum = (m.tower_base || 0) + (m.fan_base || 0) + (m.pump_base || 0) + (m.panel_base || 0) + (m.stage_base || 0);
+    const excl = { ...(state.f1.excludedComponents || {}) };
+    const exclInsts = { ...(state.f1.excludedDefaultInsts || {}) };
+    const f1Calc = computeF1Totals(m);
+    const isBasicQuote = mode === 'basic_quote';
+    const mgmtPct = f1Calc.mgmtPct;
+    const vatPct = f1Calc.vatPct;
 
     let sections = [];
-    if (mode === 'tower_bundle') {
+    if (isBasicQuote) {
+      const coreItems = buildItemsForTowerModel(m, 'itemized', excl, exclInsts, 'item-a');
+      coreItems.push({
+        id: 'item-mgmt-basic',
+        stt: String(coreItems.length + 1),
+        item_type: 'service_mgmt',
+        included: true,
+        merge_group: '',
+        name_jp: '現場管理・設計・試運転費',
+        name_vi: `Chi phí quản lý, thiết kế, vận hành (${mgmtPct}%)`,
+        specs_text: '',
+        unit: 'Lot/Lần',
+        quantity: 1,
+        cost_price: f1Calc.mgmtCost,
+        base_price: f1Calc.mgmtBase,
+        adjustment: 1,
+        unit_price: f1Calc.mgmtBase,
+        total_price: f1Calc.mgmtBase,
+        remark: '',
+        sub_lines: []
+      });
+      sections = [
+        {
+          id: 'sec-a',
+          code: 'A./製造 Sản xuất',
+          title: `A./製造 Sản xuất – ${m.product_line} Model ${m.model_code}`,
+          showSubtotal: false,
+          subtotalLabel: 'TOTAL (A)',
+          bundleMode: 'single_total',
+          model_ref: { product_line: m.product_line, model_code: String(m.model_code) },
+          excluded_default_insts: exclInsts,
+          items: coreItems
+        }
+      ];
+    } else if (mode === 'tower_bundle') {
       sections = [
         {
           id: 'sec-a',
@@ -690,37 +1312,9 @@ const App = (() => {
           showSubtotal: true,
           subtotalLabel: 'TOTAL (A)',
           bundleMode: 'bundled_set',
-          items: [
-            {
-              id: 'item-a1',
-              stt: '1',
-              item_type: 'tower_bundle',
-              name_jp: '洗浄塔',
-              name_vi: `Tháp xử lý   ${towerTitleCode}   ${m.specs?.tower_dim || ''}   (FRP)`,
-              specs_text: '',
-              unit: 'Set/Bộ',
-              quantity: 1,
-              cost_price: prodCostSum,
-              base_price: prodBaseSum,
-              adjustment: 1,
-              unit_price: prodBaseSum,
-              total_price: prodBaseSum,
-              remark: 'KYOWA VN',
-              sub_lines: [
-                { text: '込む Bao gồm :', right_text: '', remark: '', is_header: true },
-                { text: `- Stage,Ladder, 煙thang,sàn thao tác, ống khói: ${m.specs?.stack_dim || 'φ 350 x 850 H'}`, right_text: '', remark: '' },
-                { text: '- 計装品Thiết bị đi kèm', right_text: 'x 1 set', remark: '' },
-                { text: '   + 差圧計 chênh áp (x1 - đã gồm)', right_text: '', remark: '', is_default_inst: true },
-                { text: '   + レベル計 Đo mức tuần hoàn & hóa chất (SUS, cơ x2 - đã gồm)', right_text: '', remark: '', is_default_inst: true },
-                { text: '   + 給水電磁弁 Van điện từ nước cấp (Brass x1 - đã gồm)', right_text: '', remark: '', is_default_inst: true },
-                { text: `- 排気ファンQuạt hút ${m.fan_model}`, right_text: 'x 1 set', remark: 'KYOWA' },
-                { text: `   ${m.specs?.fan_spec || `${m.flow_cmh} CMH   ${m.fan_pressure_pa} Pa   ${m.motor_kw} Kw, 3phase ,380V,50Hz, 4P,IE3`}`, right_text: '', remark: 'Motor Toshiba VN', is_spec_box: true },
-                { text: `- 循環ポンプ Bơm tuần hoàn   ${m.pump_model}`, right_text: 'x 1 set', remark: 'KYOWA JP' },
-                { text: `   ${m.specs?.pump_spec || m.pump_model}`, right_text: '', remark: '', is_spec_box: true },
-                { text: '- 制御盤(INV)・配線Tủ điều khiển + Đấu dây 2m', right_text: 'x 1 set', remark: '' }
-              ]
-            }
-          ]
+          model_ref: { product_line: m.product_line, model_code: String(m.model_code) },
+          excluded_default_insts: exclInsts,
+          items: buildItemsForTowerModel(m, 'tower_bundle', excl, exclInsts, 'item-a')
         },
         {
           id: 'sec-b',
@@ -731,21 +1325,21 @@ const App = (() => {
           bundleMode: 'itemized',
           items: [
             {
-              id: 'item-b1', stt: '1', item_type: 'service_mgmt',
+              id: 'item-b1', stt: '1', item_type: 'service_mgmt', included: true, merge_group: '',
               name_jp: '現場管理・設計・試運転費', name_vi: 'Thiết kế, quản lí, vận hành',
               specs_text: '', unit: 'Lot/Lần', quantity: 1,
-              cost_price: m.mgmt_cost || 0, base_price: m.mgmt_base || 0, adjustment: 1,
-              unit_price: m.mgmt_base || 0, total_price: m.mgmt_base || 0, remark: ''
+              cost_price: f1Calc.mgmtCost, base_price: f1Calc.mgmtBase, adjustment: 1,
+              unit_price: f1Calc.mgmtBase, total_price: f1Calc.mgmtBase, remark: ''
             },
             {
-              id: 'item-b2', stt: '2', item_type: 'service',
+              id: 'item-b2', stt: '2', item_type: 'service', included: true, merge_group: '',
               name_jp: '運送費', name_vi: 'Vận chuyển',
               specs_text: '', unit: 'Lot/Lần', quantity: 1,
               cost_price: 18000000, base_price: 26000000, adjustment: 1,
               unit_price: 26000000, total_price: 26000000, remark: 'ko cẩu vào vị trí'
             },
             {
-              id: 'item-b3', stt: '3', item_type: 'service',
+              id: 'item-b3', stt: '3', item_type: 'service', included: true, merge_group: '',
               name_jp: '現場設置', name_vi: 'Lắp đặt tại công trình',
               specs_text: '', unit: 'Lot/Lần', quantity: 1,
               cost_price: 70000000, base_price: 104000000, adjustment: 1,
@@ -763,43 +1357,9 @@ const App = (() => {
           showSubtotal: true,
           subtotalLabel: 'TOTAL (A)',
           bundleMode: 'itemized',
-          items: [
-            {
-              id: 'item-1', stt: '1', item_type: 'tower',
-              name_jp: '洗浄塔', name_vi: `Hệ tháp xử lý ${m.product_line} - Model ${m.model_code} (${m.flow_rate} m³/min, FRP)`,
-              specs_text: `KT tham khảo: ${m.specs?.tower_dim || ''} · Đã gồm đo mức x2, van điện từ x1, đồng hồ chênh áp x1`,
-              unit: 'Set/Bộ', quantity: 1, cost_price: m.tower_cost, base_price: m.tower_base, adjustment: 1,
-              unit_price: m.tower_base, total_price: m.tower_base, remark: 'KYOWA VN', sub_lines: []
-            },
-            {
-              id: 'item-2', stt: '2', item_type: 'fan',
-              name_jp: '排気ファン', name_vi: `Quạt hút ${m.fan_model} (FRP)`,
-              specs_text: `${m.flow_cmh} CMH   ${m.fan_pressure_pa} Pa   ${m.motor_kw} Kw, 3phase ,380V,50Hz, 4P,IE3`,
-              unit: 'Set/Bộ', quantity: 1, cost_price: m.fan_cost, base_price: m.fan_base, adjustment: 1,
-              unit_price: m.fan_base, total_price: m.fan_base, remark: 'KYOWA', sub_lines: []
-            },
-            {
-              id: 'item-3', stt: '3', item_type: 'pump',
-              name_jp: '循環ポンプ', name_vi: `Bơm tuần hoàn ${m.pump_model}`,
-              specs_text: m.specs?.pump_spec || m.pump_model,
-              unit: 'Set/Bộ', quantity: 1, cost_price: m.pump_cost, base_price: m.pump_base, adjustment: 1,
-              unit_price: m.pump_base, total_price: m.pump_base, remark: 'KYOWA JP', sub_lines: []
-            },
-            {
-              id: 'item-4', stt: '4', item_type: 'panel',
-              name_jp: '制御盤', name_vi: 'Tủ điện điều khiển + Đấu dây',
-              specs_text: '',
-              unit: 'Set/Bộ', quantity: 1, cost_price: m.panel_cost, base_price: m.panel_base, adjustment: 1,
-              unit_price: m.panel_base, total_price: m.panel_base, remark: 'KYOWA VN', sub_lines: []
-            },
-            {
-              id: 'item-5', stt: '5', item_type: 'stage',
-              name_jp: '架台・階段', name_vi: 'Hệ sắt Stage, Ladder, sàn thao tác, ống khói',
-              specs_text: `Ống khói: ${m.specs?.stack_dim || 'φ 350 x 850 H'}`,
-              unit: 'Set/Bộ', quantity: 1, cost_price: m.stage_cost, base_price: m.stage_base, adjustment: 1,
-              unit_price: m.stage_base, total_price: m.stage_base, remark: 'KYOWA VN', sub_lines: []
-            }
-          ]
+          model_ref: { product_line: m.product_line, model_code: String(m.model_code) },
+          excluded_default_insts: exclInsts,
+          items: buildItemsForTowerModel(m, 'itemized', excl, exclInsts, 'item-a')
         },
         {
           id: 'sec-b',
@@ -810,21 +1370,21 @@ const App = (() => {
           bundleMode: 'itemized',
           items: [
             {
-              id: 'item-b1', stt: '1', item_type: 'service_mgmt',
+              id: 'item-b1', stt: '1', item_type: 'service_mgmt', included: true, merge_group: '',
               name_jp: '現場管理・設計・試運転費', name_vi: 'Thiết kế, quản lí, vận hành',
               specs_text: '', unit: 'Lot/Lần', quantity: 1,
-              cost_price: m.mgmt_cost, base_price: m.mgmt_base, adjustment: 1,
-              unit_price: m.mgmt_base, total_price: m.mgmt_base, remark: ''
+              cost_price: f1Calc.mgmtCost, base_price: f1Calc.mgmtBase, adjustment: 1,
+              unit_price: f1Calc.mgmtBase, total_price: f1Calc.mgmtBase, remark: ''
             },
             {
-              id: 'item-b2', stt: '2', item_type: 'service',
+              id: 'item-b2', stt: '2', item_type: 'service', included: true, merge_group: '',
               name_jp: '運送費', name_vi: 'Vận chuyển',
               specs_text: '', unit: 'Lot/Lần', quantity: 1,
               cost_price: 18000000, base_price: 26000000, adjustment: 1,
               unit_price: 26000000, total_price: 26000000, remark: 'ko cẩu vào vị trí'
             },
             {
-              id: 'item-b3', stt: '3', item_type: 'service',
+              id: 'item-b3', stt: '3', item_type: 'service', included: true, merge_group: '',
               name_jp: '現場設置', name_vi: 'Lắp đặt tại công trình',
               specs_text: '', unit: 'Lot/Lần', quantity: 1,
               cost_price: 70000000, base_price: 104000000, adjustment: 1,
@@ -835,6 +1395,15 @@ const App = (() => {
       ];
     }
 
+    const defaultNote5 = isBasicQuote
+      ? (state.f1.noteInstallTrans || 'Giá trên chưa bao gồm chi phí lắp đặt và vận chuyển.')
+      : 'Kích thước tháp chỉ dùng để tham khảo, kích thước chính xác phụ thuộc vào bản vẽ.\nBG trên chưa bao gồm phí nâng hạ tại công trình và cẩu đưa vào vị trí lắp đặt.';
+
+    state.quickAddTargetSecIdx = 0;
+    state.selectedGroupItemKeys = [];
+    state.quickTowerProdLine = m.product_line;
+    state.quickTowerModelCode = String(m.model_code);
+
     state.activeQuote = {
       id: null,
       quote_number: quoteNumber,
@@ -842,10 +1411,10 @@ const App = (() => {
       revision: 1,
       quote_date: today,
       doc_title: '御見積 BÁO GIÁ',
-      flow_type: 'detailed',
-      layout_template: mode === 'tower_bundle' ? 'tower_bundle' : 'itemized',
-      mgmt_fee_mode: 'separate_to_b',
-      mgmt_fee_percent: 5,
+      flow_type: isBasicQuote ? 'basic' : 'detailed',
+      layout_template: isBasicQuote ? 'basic_single' : (mode === 'tower_bundle' ? 'tower_bundle' : 'itemized'),
+      mgmt_fee_mode: isBasicQuote ? 'included_in_a' : 'separate_to_b',
+      mgmt_fee_percent: mgmtPct,
       status: 'draft',
       customer_name: state.f1.customerName || 'CÔNG TY KHÁCH HÀNG',
       customer_address: '',
@@ -864,7 +1433,7 @@ const App = (() => {
       signer_name: 'NGUYỄN BẢO TRƯỜNG',
       selected_product_line: m.product_line,
       selected_model_code: String(m.model_code),
-      vat_percent: 8,
+      vat_percent: vatPct,
       sections,
       terms: {
         validity_days: 30,
@@ -876,7 +1445,7 @@ const App = (() => {
         warranty_months: 12,
         warranty_note_vi: 'Tháng (Tính từ khi giao hàng)',
         warranty_note_jp: 'か月（設置後から計算）',
-        note_5_vi: 'Kích thước tháp chỉ dùng để tham khảo, kích thước chính xác phụ thuộc vào bản vẽ.\nBG trên chưa bao gồm phí nâng hạ tại công trình và cẩu đưa vào vị trí lắp đặt.',
+        note_5_vi: defaultNote5,
         payment_mode: 'installments_30_60_10',
         payment_lines: [
           '- Thanh toán lần 1 1回目 : Cọc 30% 契約時に30％前金',
@@ -886,16 +1455,22 @@ const App = (() => {
         bank_account_name_vi: 'KYOWA KAKO VIETNAM CO.,LTD',
         bank_account_no: '3680022466',
         bank_name_vi: 'BIDV Bank - Tan Binh Branch, HCMC',
-        total_label_before_tax: 'Total (A) + (B) - Before TAX',
-        mgmt_fee_percent: 5
+        total_label_before_tax: isBasicQuote ? 'TOTAL - Before TAX' : 'Total (A) + (B) - Before TAX',
+        mgmt_fee_percent: mgmtPct,
+        auto_calc_mgmt: true,
+        price_display_mode: isBasicQuote ? 'single_total' : 'itemized',
+        spec_detail_level: isBasicQuote ? 'basic' : (state.f1.specDetailLevel || 'detailed')
       },
-      internal_notes: `Khởi tạo từ cấu hình cơ bản ${m.product_line} - Model ${m.model_code} (Tổng giá cơ bản gốc: ${fmtVnd(m.total_base)} VND).`
+      internal_notes: `Khởi tạo từ cấu hình cơ bản ${m.product_line} - Model ${m.model_code} (${f1Calc.selectedCount}/5 hạng mục, tổng cơ bản trước thuế: ${fmtVnd(f1Calc.subtotalBase)} VND).`
     };
 
     recalcActiveQuoteTotals();
     updateActiveQuoteBadge();
-    showTab('flow2');
-    toast(`Đã nạp cấu hình ${m.product_line} - Model ${m.model_code} sang Báo giá chi tiết!`);
+    showTab(isBasicQuote ? 'print' : 'flow2');
+    toast(isBasicQuote
+      ? `Đã tạo Báo giá cơ bản ${m.product_line} - Model ${m.model_code} (1 giá tổng, thông số gọn)!`
+      : `Đã nạp cấu hình ${m.product_line} - Model ${m.model_code} sang Báo giá chi tiết!`
+    );
   }
 
   // ===========================================================================
@@ -914,7 +1489,7 @@ const App = (() => {
   }
 
   function computeMgmtFeeAmounts(q, customPct) {
-    if (!q) return { pct: 5, prodCostSum: 0, prodBaseSum: 0, cost: 0, base: 0 };
+    if (!q) return { pct: 5, prodCostSum: 0, prodBaseSum: 0, cost: 0, base: 0, areaCount: 0 };
     const rawPct = customPct !== undefined
       ? customPct
       : (q.mgmt_fee_percent ?? q.terms?.mgmt_fee_percent ?? 5);
@@ -922,10 +1497,17 @@ const App = (() => {
 
     let prodCostSum = 0;
     let prodBaseSum = 0;
-    const primarySec = (q.sections && q.sections[0]) ? q.sections[0] : null;
-    if (primarySec && Array.isArray(primarySec.items)) {
-      primarySec.items.forEach(it => {
+    let hasAnyProdItems = false;
+    let areaCount = 0;
+
+    // Mã 09: Tổng hợp thiết bị sản xuất trên TẤT CẢ các khu vực / hệ (A1, A2, ...), bỏ qua mục không báo giá
+    (q.sections || []).forEach(sec => {
+      let secHasIncludedProd = false;
+      (sec.items || []).forEach(it => {
         if (!isMgmtFeeItem(it) && it.item_type !== 'service') {
+          hasAnyProdItems = true;
+          if (it.included === false) return;
+          secHasIncludedProd = true;
           const qty = Math.max(1, Number(it.quantity || 1));
           prodBaseSum += Math.round(Number(it.base_price || 0) * qty);
           if (it.cost_price !== null && it.cost_price !== undefined) {
@@ -933,9 +1515,10 @@ const App = (() => {
           }
         }
       });
-    }
+      if (secHasIncludedProd) areaCount++;
+    });
 
-    if (prodBaseSum <= 0 && q.selected_product_line && q.selected_model_code) {
+    if (!hasAnyProdItems && prodBaseSum <= 0 && q.selected_product_line && q.selected_model_code) {
       const refModel = state.models.find(
         m => m.product_line === q.selected_product_line && String(m.model_code) === String(q.selected_model_code)
       );
@@ -947,11 +1530,32 @@ const App = (() => {
 
     const base = Math.round(prodBaseSum * (pct / 100));
     const cost = prodCostSum > 0 ? Math.round(prodCostSum * (pct / 100)) : Math.round(base / 2);
-    return { pct, prodCostSum, prodBaseSum, cost, base };
+    return { pct, prodCostSum, prodBaseSum, cost, base, areaCount };
+  }
+
+  function syncAutoMgmtFee(q) {
+    if (!q) return;
+    const autoCalc = q.terms?.auto_calc_mgmt !== false;
+    if (!autoCalc) return;
+    const mgmtInfo = computeMgmtFeeAmounts(q);
+    (q.sections || []).forEach(sec => {
+      (sec.items || []).forEach(it => {
+        if (isMgmtFeeItem(it)) {
+          it.item_type = 'service_mgmt';
+          if (it.included === false) return;
+          it.cost_price = mgmtInfo.cost;
+          it.base_price = mgmtInfo.base;
+          if (!it._keepExactUnitPrice) {
+            it.unit_price = Math.max(0, Math.round(mgmtInfo.base * Number(it.adjustment ?? 1)));
+          }
+        }
+      });
+    });
   }
 
   function normalizeItemPricing(it) {
     if (!it) return;
+    if (it.included === undefined) it.included = true;
     it.quantity = Math.max(1, Number(it.quantity || 1));
     if (it.cost_price !== null && it.cost_price !== undefined) {
       it.cost_price = Math.max(0, Number(it.cost_price || 0));
@@ -995,6 +1599,19 @@ const App = (() => {
   function recalcActiveQuoteTotals() {
     const q = state.activeQuote;
     if (!q) return;
+
+    // Đảm bảo dữ liệu breakdown cho các gói tháp cũ & tự động đồng bộ Phí QL/TK (Mã 04, 09, 10)
+    (q.sections || []).forEach(sec => {
+      (sec.items || []).forEach(it => {
+        if (it.item_type === 'tower_bundle') {
+          hydrateTowerBundleBreakdown(it, q, sec);
+        }
+        normalizeItemPricing(it);
+      });
+    });
+
+    syncAutoMgmtFee(q);
+
     let subCost = 0;
     let subBase = 0;
     let subBeforeTax = 0;
@@ -1003,6 +1620,10 @@ const App = (() => {
       let secTotal = 0;
       (sec.items || []).forEach(it => {
         normalizeItemPricing(it);
+        if (it.included === false) {
+          it.total_price = 0;
+          return;
+        }
         const qty = it.quantity;
         const base = it.base_price;
         const unitP = it.unit_price;
@@ -1024,6 +1645,20 @@ const App = (() => {
     q.total_after_tax = subBeforeTax + q.vat_amount;
   }
 
+  function detectServiceCoverage(q) {
+    let hasShip = false;
+    let hasInstall = false;
+    (q?.sections || []).forEach(sec => {
+      (sec.items || []).forEach(it => {
+        if (it.included === false) return;
+        const txt = `${it.name_vi || ''} ${it.name_jp || ''}`.toLowerCase();
+        if (txt.includes('vận chuyển') || txt.includes('運送費')) hasShip = true;
+        if (txt.includes('lắp đặt') || txt.includes('現場設置')) hasInstall = true;
+      });
+    });
+    return { hasShip, hasInstall };
+  }
+
   function renderFlow2() {
     const container = document.getElementById('view-flow2');
     if (!container) return;
@@ -1034,6 +1669,7 @@ const App = (() => {
 
     recalcActiveQuoteTotals();
     const q = state.activeQuote;
+    q.terms = q.terms || {};
     const showCost = state.permissions.canViewCost;
     const canApprove = state.permissions.canApproveQuote;
     const canEdit = canUserEditQuote(q);
@@ -1049,6 +1685,29 @@ const App = (() => {
     const instrumentsAndOptions = state.equipment.filter(e => e.category === 'instrument' || e.category === 'option');
     const standaloneFansPumps = state.equipment.filter(e => e.category === 'fan' || e.category === 'pump');
     const serviceCatalog = state.equipment.filter(e => e.category === 'service');
+
+    const secList = q.sections || [];
+    if (state.quickAddTargetSecIdx >= secList.length) {
+      state.quickAddTargetSecIdx = Math.max(0, secList.length - 1);
+    }
+    const targetSecIdx = Math.max(0, Number(state.quickAddTargetSecIdx || 0));
+
+    const productLines = [...new Set(state.models.map(m => m.product_line))];
+    if (!productLines.includes(state.quickTowerProdLine) && productLines.length > 0) {
+      state.quickTowerProdLine = productLines[0];
+    }
+    const quickTowerModels = state.models.filter(m => m.product_line === state.quickTowerProdLine);
+    if (quickTowerModels.length > 0 && !quickTowerModels.some(m => String(m.model_code) === String(state.quickTowerModelCode))) {
+      state.quickTowerModelCode = String(quickTowerModels[0].model_code);
+    }
+
+    const priceDisplayMode = q.terms.price_display_mode || 'itemized';
+    const specDetailLevel = q.terms.spec_detail_level || 'detailed';
+    const autoCalcMgmt = q.terms.auto_calc_mgmt !== false;
+    const svcCov = detectServiceCoverage(q);
+    const existingGroupNames = [...new Set(
+      secList.flatMap(s => (s.items || []).map(it => String(it.merge_group || '').trim()).filter(Boolean))
+    )];
 
     container.innerHTML = `
       ${!canEdit ? `
@@ -1290,78 +1949,133 @@ const App = (() => {
 
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">2. Quy Tắc Chi Phí Quản Lý/Thiết Kế & Bộ Công Cụ Thêm Nhanh Thiết Bị / Dịch Vụ</h3>
+          <h3 class="card-title">2. Phí Quản Lý/Thiết Kế, Nạp Hệ Tháp Theo Khu Vực & Thêm Nhanh Thiết Bị</h3>
         </div>
 
-        <div class="grid-3" style="margin-bottom: 14px;">
+        <div class="target-area-bar">
+          <div class="row" style="align-items:center; gap:8px; flex:1; min-width:260px;">
+            <strong style="color:var(--navy); white-space:nowrap;">Khu vực / Nhóm:</strong>
+            <select id="quickAddTargetSectionSelect" style="flex:1; min-width:200px; font-weight:700; color:var(--navy);"
+                    onchange="App.setQuickAddTargetSection(this.value)">
+              ${secList.map((sec, idx) => `
+                <option value="${idx}" ${idx === targetSecIdx ? 'selected' : ''}>
+                  [${idx + 1}] ${esc(sec.title || sec.code || `Nhóm ${idx + 1}`)} (${(sec.items || []).filter(x => x.included !== false).length} mục)
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="row" style="gap:6px;">
+            <button type="button" class="btn btn-sm btn-navy" onclick="App.addSection()">
+              + Tạo Khu vực / Nhóm mới
+            </button>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-bottom: 12px;">
           ${(() => {
         const mgmtInfo = computeMgmtFeeAmounts(q);
         const mgmtPct = mgmtInfo.pct;
         return `
               <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
                 <div class="row-between" style="margin-bottom:6px; gap:6px;">
-                  <strong style="color:var(--navy);">Quy tắc "Chi phí quản lý, thiết kế" (<span id="mgmtFeePctTitle">${mgmtPct}</span>%)</strong>
+                  <strong style="color:var(--navy);">Phí "Quản lý, thiết kế, vận hành" (<span id="mgmtFeePctTitle">${mgmtPct}</span>%)</strong>
                   <div style="display:flex; align-items:center; gap:4px; background:#fff; padding:3px 8px; border-radius:6px; border:1px solid #93c5fd;">
                     <span style="font-size:12px; font-weight:700; color:var(--navy);">Mức phí:</span>
                     <input type="number" id="mgmtFeePercentInput" class="num" min="0" max="100" step="0.1"
                            style="width:62px; padding:3px 6px; font-weight:700; color:var(--navy); border:1px solid #cbd5e1;"
                            value="${mgmtPct}"
-                           title="Mặc định 5%, có thể điều chỉnh tỷ lệ % tùy ý"
+                           title="Mặc định 5% trên tổng thiết bị sản xuất của TẤT CẢ các hệ/khu vực"
                            onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
                            oninput="App.onMgmtFeePercentInput(this.value, this)"
                            onblur="App.onMgmtFeePercentBlur(this)">
                     <span style="font-size:12.5px; font-weight:700; color:var(--navy);">%</span>
                   </div>
                 </div>
-                <div class="row-between" style="margin-bottom:8px; gap:6px;">
+                <div class="row-between" style="margin-bottom:6px; gap:6px; flex-wrap:wrap;">
                   <div class="row" style="gap:4px;">
                     ${[0, 3, 5, 8, 10].map(pct => `
                       <button type="button" class="btn btn-sm ${Number(mgmtPct) === pct ? 'btn-navy' : ''}"
                               id="mgmtPctBtn-${pct}"
                               style="padding:2px 7px; font-size:11.5px;"
                               onclick="App.setQuickMgmtFeePercent(${pct})">
-                        ${pct === 5 ? '5%' : `${pct}%`}
+                        ${pct}%
                       </button>
                     `).join('')}
                   </div>
-                  <span id="mgmtFeeCalcHint" style="font-size:11.5px; font-weight:700; color:var(--green);" title="Giá gốc cơ bản của khoản Chi phí quản lý, thiết kế tương ứng với tỷ lệ % đang chọn">
-                    = ${fmtVnd(mgmtInfo.base)} đ
-                  </span>
+                  <label style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;color:var(--navy);cursor:pointer;">
+                    <input type="checkbox" ${autoCalcMgmt ? 'checked' : ''} onchange="App.toggleAutoCalcMgmt(this.checked)">
+                    Tự động tính lại khi đổi thiết bị
+                  </label>
                 </div>
-                <p style="font-size:12px; color:var(--muted); margin:0 0 8px;">
-                  Tránh tính trùng khoản Quản lý & Thiết kế đã có trong cấu hình cơ bản khi thêm mục B. Khác:
-                </p>
+                <div id="mgmtFeeCalcHint" style="font-size:11.5px; font-weight:700; color:var(--green); margin-bottom:8px; background:#f0fdf4; padding:4px 8px; border-radius:5px; border:1px solid #bbf7d0;">
+                  = ${mgmtPct}% × ${fmtVnd(mgmtInfo.prodBaseSum)} đ (tổng thiết bị ${mgmtInfo.areaCount > 1 ? `${mgmtInfo.areaCount} khu vực` : 'sản xuất'}) = ${fmtVnd(mgmtInfo.base)} đ
+                </div>
                 <select style="width:100%" onchange="App.handleMgmtFeeModeChange(this.value)">
-                  <option value="separate_to_b" ${q.mgmt_fee_mode === 'separate_to_b' ? 'selected' : ''}>1. Thay thế / Tách sang mục B. Khác (Chuẩn mẫu Taikisha - Không cộng trùng)</option>
+                  <option value="separate_to_b" ${q.mgmt_fee_mode === 'separate_to_b' ? 'selected' : ''}>1. Tách sang mục B. Khác (Chuẩn mẫu Taikisha - Không cộng trùng)</option>
                   <option value="included_in_a" ${q.mgmt_fee_mode === 'included_in_a' ? 'selected' : ''}>2. Gộp chung trong mục Sản xuất A (Không tách mục B)</option>
-                  <option value="additional" ${q.mgmt_fee_mode === 'additional' ? 'selected' : ''}>3. Cộng bổ sung riêng (Giữ nguyên giá cơ bản + Thêm phí thiết kế mới)</option>
+                  <option value="additional" ${q.mgmt_fee_mode === 'additional' ? 'selected' : ''}>3. Cộng bổ sung riêng</option>
                 </select>
               </div>
             `;
       })()}
 
+          <div style="background:#f0f9ff; padding:12px; border-radius:8px; border:1px solid #bae6fd;">
+            <strong style="color:var(--navy); display:block; margin-bottom:6px;">Chọn & Nạp Hệ Tháp cho Khu vực</strong>
+            <div class="grid-3" style="gap:6px; margin-bottom:8px;">
+              <label class="field">
+                Dòng sản phẩm
+                <select onchange="App.setQuickTowerProdLine(this.value)">
+                  ${productLines.map(pl => `<option value="${esc(pl)}" ${pl === state.quickTowerProdLine ? 'selected' : ''}>${esc(pl)}</option>`).join('')}
+                </select>
+              </label>
+              <label class="field">
+                Model tháp
+                <select onchange="App.setQuickTowerModelCode(this.value)">
+                  ${quickTowerModels.map(m => `<option value="${esc(m.model_code)}" ${String(m.model_code) === String(state.quickTowerModelCode) ? 'selected' : ''}>M${esc(m.model_code)} (${m.flow_rate} m³/m · ${fmtVnd(m.total_base)}đ)</option>`).join('')}
+                </select>
+              </label>
+              <label class="field">
+                Kiểu nạp
+                <select onchange="App.setQuickTowerInsertMode(this.value)">
+                  <option value="itemized" ${state.quickTowerInsertMode === 'itemized' ? 'selected' : ''}>Tách 5 hạng mục</option>
+                  <option value="tower_bundle" ${state.quickTowerInsertMode === 'tower_bundle' ? 'selected' : ''}>Gộp 1 Set</option>
+                </select>
+              </label>
+            </div>
+            <div class="row" style="gap:6px;">
+              <button type="button" class="btn btn-sm btn-primary" onclick="App.insertTowerIntoSection(${targetSecIdx})">
+                + Nạp Hệ tháp vào Khu vực [${targetSecIdx + 1}]
+              </button>
+              <button type="button" class="btn btn-sm btn-navy" onclick="App.addNewAreaWithTower()">
+                + Tạo Khu vực mới kèm Hệ tháp này
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2">
           <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
-            <strong style="color:var(--navy); display:block; margin-bottom:6px;">Thêm Thiết bị đo & Option vào Báo giá</strong>
+            <strong style="color:var(--navy); display:block; margin-bottom:6px;">Thêm Thiết bị đo & Option vào Khu vực [${targetSecIdx + 1}]</strong>
             <p style="font-size:12px; color:var(--muted); margin:0 0 8px;">
-              4 thiết bị mặc định đã đánh dấu <span class="tag-included">Đã gồm</span> để tránh cộng trùng:
+              Thiết bị đi kèm mặc định được kiểm tra riêng theo từng khu vực/hệ (Mã 01 & 03):
             </p>
             <div class="quick-add-row">
               <select id="quickAddInstSelect">
                 ${instrumentsAndOptions.map(eq => `
                   <option value="${eq.id}">
-                    ${eq.is_default_included ? '[ĐÃ GỒM MẶC ĐỊNH] ' : '[+ OPTION] '}
+                    ${eq.is_default_included ? '[MẶC ĐỊNH THEO THÁP] ' : '[+ OPTION] '}
                     ${esc(eq.name_vi)} — ${eq.base_price ? fmtVnd(eq.base_price) + ' đ' : 'Chưa có giá'}
                   </option>
                 `).join('')}
               </select>
               <button class="btn btn-sm btn-primary" onclick="App.quickAddEquipment('quickAddInstSelect')">
-                + Thêm dòng
+                + Thêm vào KV [${targetSecIdx + 1}]
               </button>
             </div>
           </div>
 
           <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
-            <strong style="color:var(--navy); display:block; margin-bottom:6px;">Thêm nhanh Quạt / Bơm lẻ & Dịch vụ</strong>
+            <strong style="color:var(--navy); display:block; margin-bottom:6px;">Thêm nhanh Quạt / Bơm lẻ & Dịch vụ vào Khu vực [${targetSecIdx + 1}]</strong>
             <div class="quick-add-row" style="margin-bottom:6px;">
               <select id="quickAddFanPumpSelect">
                 ${standaloneFansPumps.map(eq => `
@@ -1388,16 +2102,72 @@ const App = (() => {
 
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">3. Chi Tiết Các Hạng Mục Báo Giá & Điều Chỉnh Thương Lượng</h3>
+          <h3 class="card-title">3. Chi Tiết Các Hạng Mục Báo Giá, Hiển Thị Giá & Điều Chỉnh Thương Lượng</h3>
           <div class="row">
             <button class="btn btn-sm btn-navy" onclick="App.addSection()">
-              + Thêm Nhóm / Khu Vực Mới (VD: B./Khác, II. PH1 - Tháp SCR...)
+              + Thêm Nhóm / Khu Vực Mới (VD: A2 - Khu vực 2, B./Khác...)
             </button>
           </div>
         </div>
 
+        <div class="display-mode-bar">
+          <div class="cfg-pill-group">
+            <span class="cfg-pill-label">Chế độ hiển thị giá gửi khách:</span>
+            <button type="button" class="btn btn-sm ${priceDisplayMode === 'itemized' ? 'btn-navy' : ''}"
+                    onclick="App.setQuotePriceDisplayMode('itemized')" title="Hiển thị đơn giá & thành tiền riêng từng thiết bị (Mã 08)">
+              Chi tiết từng thiết bị
+            </button>
+            <button type="button" class="btn btn-sm ${priceDisplayMode === 'per_section' ? 'btn-navy' : ''}"
+                    onclick="App.setQuotePriceDisplayMode('per_section')" title="Mỗi hệ / khu vực hiển thị 1 giá trọn gói, ẩn giá từng thiết bị bên trong (Mã 06)">
+              1 giá từng hệ / khu vực
+            </button>
+            <button type="button" class="btn btn-sm ${priceDisplayMode === 'single_total' ? 'btn-navy' : ''}"
+                    onclick="App.setQuotePriceDisplayMode('single_total')" title="Liệt kê toàn bộ thiết bị nhưng chỉ hiện 1 giá tổng duy nhất (Mã 06)">
+              1 giá tổng toàn bộ
+            </button>
+            <button type="button" class="btn btn-sm ${priceDisplayMode === 'custom_groups' ? 'btn-navy' : ''}"
+                    onclick="App.setQuotePriceDisplayMode('custom_groups')" title="Gộp các mục bất kỳ thành 1 nhóm giá (VD: 1+3+5), tách riêng các mục còn lại (Mã 07)">
+              Gộp nhóm linh hoạt
+            </button>
+          </div>
+
+          <div class="cfg-pill-group">
+            <span class="cfg-pill-label">📋 Thông số gửi khách:</span>
+            <button type="button" class="btn btn-sm ${specDetailLevel === 'basic' ? 'btn-navy' : ''}"
+                    onclick="App.setQuoteSpecDetailLevel('basic')" title="Báo giá cơ bản: ẩn kW, 3 pha, 380V, 50Hz, 4P, IE3 (Mã 11)">
+              Cơ bản (Gọn)
+            </button>
+            <button type="button" class="btn btn-sm ${specDetailLevel === 'detailed' ? 'btn-navy' : ''}"
+                    onclick="App.setQuoteSpecDetailLevel('detailed')" title="Hiển thị đầy đủ toàn bộ thông số kỹ thuật gốc">
+              Chi tiết (Đầy đủ)
+            </button>
+          </div>
+        </div>
+
+        ${priceDisplayMode === 'custom_groups' ? `
+          <div class="custom-group-toolbar">
+            <div class="row" style="align-items:center; gap:8px; flex-wrap:wrap;">
+              <strong style="color:#1d4ed8;">🔗 Gộp nhóm linh hoạt (Mã 07):</strong>
+              <span>Đã chọn <strong id="groupSelCount">${(state.selectedGroupItemKeys || []).length}</strong> mục</span>
+              <input type="text" id="customGroupNameInput" style="width:240px;padding:4px 8px;font-size:12.5px;"
+                     value="${esc(state.customGroupNameInput || '')}"
+                     placeholder="Nhập tên nhóm gộp (VD: Gói thiết bị chính)..."
+                     oninput="App.setCustomGroupNameInput(this.value)">
+              <button type="button" class="btn btn-sm btn-primary" onclick="App.mergeSelectedItemsIntoGroup()">
+                🔗 Gộp mục đã chọn thành 1 giá
+              </button>
+              <button type="button" class="btn btn-sm" onclick="App.ungroupSelectedItems()">
+                ✂️ Tách khỏi nhóm
+              </button>
+              ${existingGroupNames.length > 0 ? `
+                <span style="font-size:11.5px;color:#475569;">Nhóm hiện có: ${existingGroupNames.map(gn => `<span class="tag-group-pill">${esc(gn)}</span>`).join(' ')}</span>
+              ` : ''}
+            </div>
+          </div>
+        ` : ''}
+
         ${(() => {
-        const allItems = (q.sections || []).flatMap(s => s.items || []);
+        const allItems = (q.sections || []).flatMap(s => s.items || []).filter(x => x.included !== false);
         const firstFactor = allItems.length > 0 ? Number(allItems[0].adjustment ?? 1) : 1;
         const isUniform = allItems.length > 0 && allItems.every(it => Math.abs(Number(it.adjustment ?? 1) - firstFactor) < 0.0001);
         const bulkVal = isUniform ? firstFactor : (q.bulk_factor ?? 1);
@@ -1440,18 +2210,21 @@ const App = (() => {
           `;
       })()}
 
-        ${(q.sections || []).map((sec, sIdx) => `
-          <div style="border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 16px; background: #fff;">
+        ${(q.sections || []).map((sec, sIdx) => {
+        const isActiveTarget = sIdx === targetSecIdx;
+        const secInstInfo = getSectionDefaultInstInfo(sec);
+        return `
+          <div class="${isActiveTarget ? 'sec-card-active-target' : ''}" style="border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 16px; background: #fff;">
             <div class="row-between sec-header-bar">
               <div class="row sec-header-fields">
                 <label class="field sec-title-field">
-                  Tiêu đề Nhóm / Phân khu
-                  <input type="text" value="${esc(sec.title)}" placeholder="VD: A./製造 Sản xuất hoặc I. PH1 - Tháp SCR 1-1"
+                  Tiêu đề Nhóm / Phân khu [${sIdx + 1}]
+                  <input type="text" value="${esc(sec.title)}" placeholder="VD: A1./ Khu vực 1 - Tháp FSD 0.5..."
                          oninput="App.updateSectionField(${sIdx}, 'title', this.value)">
                 </label>
                 <label class="field sec-sublabel-field">
                   Nhãn dòng Tổng nhóm
-                  <input type="text" value="${esc(sec.subtotalLabel || '')}" placeholder="VD: TOTAL (A)"
+                  <input type="text" value="${esc(sec.subtotalLabel || '')}" placeholder="VD: TOTAL (A1)"
                          oninput="App.updateSectionField(${sIdx}, 'subtotalLabel', this.value)">
                 </label>
                 <label class="sec-subcheck-label">
@@ -1460,56 +2233,128 @@ const App = (() => {
                   Hiện Tổng nhóm
                 </label>
               </div>
-              <div class="row">
+              <div class="row" style="gap:6px;">
+                <button type="button" class="btn btn-sm ${isActiveTarget ? 'btn-navy' : ''}"
+                        onclick="App.setQuickAddTargetSection(${sIdx})"
+                        title="Chọn nhóm này làm điểm đến cho bộ công cụ thêm nhanh thiết bị & nạp hệ tháp ở trên">
+                  ${isActiveTarget ? ' Đang chọn thêm nhanh' : ' Chọn thêm nhanh'}
+                </button>
                 <button class="btn btn-sm btn-primary" onclick="App.addBlankItem(${sIdx})">
-                  + Thêm Hạng Mục Vào Nhóm Này
+                  + Thêm Hạng Mục
                 </button>
                 ${q.sections.length > 1 ? `
                   <button class="btn btn-sm btn-danger" onclick="App.removeSection(${sIdx})" title="Xóa nhóm này">
-                    Xóa Nhóm
+                    Xóa
                   </button>
                 ` : ''}
               </div>
             </div>
 
+            ${secInstInfo.hasTower ? `
+              <div class="sec-default-strip">
+                <div>
+                  ${sec.model_ref ? `<strong>${esc(sec.model_ref.product_line)} - Model ${esc(sec.model_ref.model_code)}</strong> · ` : ''}
+                  <strong>✓ TB mặc định đi kèm:</strong>
+                  ${secInstInfo.defaults.map(d => d.isIncluded
+                    ? `<span class="tag-included" style="font-size:11px;">${esc(d.name_vi)} x${d.default_qty || 1}</span>`
+                    : `<span class="tag-excluded" style="font-size:11px;">Đã bỏ: ${esc(d.name_vi)}</span>`
+                  ).join(' ')}
+                </div>
+                <span style="font-weight:700; color:var(--navy);">Option / TB thêm: ${secInstInfo.optionCount} mục</span>
+              </div>
+            ` : ''}
+
             <div class="table-wrap">
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th style="width:45px" class="c">STT</th>
-                    <th style="width:120px; min-width:115px;">Tên tiếng Nhật</th>
+                    <th style="width:62px" class="c" title="Bỏ tích để không báo giá hạng mục này (giữ lại dòng để đối chiếu)">Báo giá / STT</th>
+                    ${priceDisplayMode === 'custom_groups' ? '<th style="width:36px" class="c" title="Chọn nhiều dòng để gộp thành 1 nhóm giá">Gộp</th>' : ''}
+                    <th style="width:118px; min-width:110px;">Tên tiếng Nhật</th>
                     <th style="min-width:290px;">Tên hạng mục (Tiếng Việt) & Thông số / Cấu hình đi kèm</th>
-                    <th style="width:78px" class="c">Đơn vị</th>
-                    <th style="width:65px" class="r">SL</th>
-                    ${showCost ? '<th style="width:125px" class="r cost-col">Giá Cost (VND)</th>' : ''}
-                    <th style="width:130px" class="r">Giá gốc cơ bản</th>
-                    <th style="width:130px" class="r" title="Hệ số nhân điều chỉnh cho từng hạng mục (Đơn giá = Giá gốc × Hệ số)">Chênh lệch</th>
-                    <th style="width:135px" class="r">Đơn giá sau ĐC</th>
-                    <th style="width:135px" class="r">Thành tiền</th>
-                    <th style="width:110px">Ghi chú</th>
+                    <th style="width:76px" class="c">Đơn vị</th>
+                    <th style="width:62px" class="r">SL</th>
+                    ${showCost ? '<th style="width:120px" class="r cost-col">Giá Cost (VND)</th>' : ''}
+                    <th style="width:125px" class="r">Giá gốc cơ bản</th>
+                    <th style="width:125px" class="r" title="Hệ số nhân điều chỉnh cho từng hạng mục (Đơn giá = Giá gốc × Hệ số)">Chênh lệch</th>
+                    <th style="width:130px" class="r">Đơn giá sau ĐC</th>
+                    <th style="width:130px" class="r">Thành tiền</th>
+                    <th style="width:105px">Ghi chú</th>
                     <th style="width:44px" class="c">Xóa</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${(sec.items || []).map((it, iIdx) => {
-        const belowCost = showCost && it.cost_price && it.unit_price < it.cost_price;
+        const isIncluded = it.included !== false;
+        const belowCost = isIncluded && showCost && it.cost_price && it.unit_price < it.cost_price;
+        const itemKey = `${sIdx}:${iIdx}`;
+        const isCheckedForGroup = (state.selectedGroupItemKeys || []).includes(itemKey);
+        const compBreakdown = (it.item_type === 'tower_bundle') ? hydrateTowerBundleBreakdown(it, q, sec) : null;
         return `
-                      <tr>
+                      <tr class="${isIncluded ? '' : 'row-excluded'}">
                         <td class="c">
-                          <input type="text" style="width:38px;text-align:center;padding:4px" value="${esc(it.stt)}"
-                                 oninput="App.updateItemField(${sIdx}, ${iIdx}, 'stt', this.value)">
+                          <div style="display:flex;align-items:center;justify-content:center;gap:4px;">
+                            <input type="checkbox" ${isIncluded ? 'checked' : ''}
+                                   style="width:15px;height:15px;cursor:pointer;"
+                                   title="${isIncluded ? 'Đang tính vào báo giá (Bỏ tích để KHÔNG báo giá mục này)' : 'Đang ẩn / KHÔNG báo giá (Tích để tính lại)'}"
+                                   onchange="App.toggleItemIncluded(${sIdx}, ${iIdx}, this.checked)">
+                            <input type="text" style="width:34px;text-align:center;padding:3px" value="${esc(it.stt)}"
+                                   oninput="App.updateItemField(${sIdx}, ${iIdx}, 'stt', this.value)">
+                          </div>
+                          ${!isIncluded ? '<div style="margin-top:2px;"><span class="tag-excluded" style="font-size:9.5px;">Không BG</span></div>' : ''}
                         </td>
+                        ${priceDisplayMode === 'custom_groups' ? `
+                          <td class="c">
+                            <input type="checkbox" ${isCheckedForGroup ? 'checked' : ''} ${!isIncluded ? 'disabled' : ''}
+                                   style="width:15px;height:15px;cursor:pointer;"
+                                   onchange="App.toggleGroupSelectItem('${itemKey}', this.checked)">
+                          </td>
+                        ` : ''}
                         <td>
                           <input type="text" style="width:100%;padding:5px" value="${esc(it.name_jp || '')}" placeholder="洗浄塔 / 排気ファン"
                                  oninput="App.updateItemField(${sIdx}, ${iIdx}, 'name_jp', this.value)">
                         </td>
                         <td>
-                          <input type="text" style="width:100%;font-weight:700;margin-bottom:4px;" value="${esc(it.name_vi || '')}"
+                          <input type="text" class="excl-strike" style="width:100%;font-weight:700;margin-bottom:4px;" value="${esc(it.name_vi || '')}"
                                  placeholder="Tên thiết bị / dịch vụ..."
                                  oninput="App.updateItemField(${sIdx}, ${iIdx}, 'name_vi', this.value)">
                           <input type="text" style="width:100%;font-size:12px;color:#374151;" value="${esc(it.specs_text || '')}"
-                                 placeholder="Dòng thông số phụ (VD: 850 CMM  1500 Pa  45 Kw, 3phase, 380V... hoặc 385 L/min x 10m x 2.2kW)"
+                                 placeholder="Dòng thông số phụ (VD: 2,100 CMH  750 Pa  1.5 Kw, 3phase, 380V...)"
                                  oninput="App.updateItemField(${sIdx}, ${iIdx}, 'specs_text', this.value)">
+                          ${(specDetailLevel === 'basic' && it.specs_text && formatSpecForLevel(it.specs_text, 'basic') !== it.specs_text.trim()) ? `
+                            <div style="font-size:11px;color:#0369a1;margin-top:2px;">
+                              👁️ Hiển thị bản gọn: <strong>${esc(formatSpecForLevel(it.specs_text, 'basic'))}</strong>
+                            </div>
+                          ` : ''}
+
+                          ${priceDisplayMode === 'custom_groups' ? `
+                            <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+                              <span style="font-size:11px;font-weight:700;color:#1d4ed8;">Nhóm gộp giá:</span>
+                              <input type="text" style="flex:1;max-width:240px;padding:2px 6px;font-size:11.5px;border-color:#93c5fd;background:#eff6ff;"
+                                     value="${esc(it.merge_group || '')}"
+                                     placeholder="Để trống = báo giá tách riêng"
+                                     oninput="App.updateItemField(${sIdx}, ${iIdx}, 'merge_group', this.value)">
+                              ${it.merge_group ? `<button type="button" class="btn btn-sm" style="padding:1px 6px;font-size:10.5px;" onclick="App.clearItemMergeGroup(${sIdx}, ${iIdx})">Tách</button>` : ''}
+                            </div>
+                          ` : ''}
+
+                          ${compBreakdown ? `
+                            <div class="comp-toggle-strip">
+                              <strong style="color:var(--navy);">Cấu phần gói (bỏ tích để trừ giá):</strong>
+                              ${['tower', 'fan', 'pump', 'panel', 'stage'].map(ck => {
+                                const cObj = compBreakdown[ck];
+                                if (!cObj) return '';
+                                const cOn = cObj.included !== false;
+                                return `
+                                  <label class="comp-toggle-chip ${cOn ? '' : 'is-off'}" title="${esc(cObj.label)}: ${fmtVnd(cObj.base)} đ">
+                                    <input type="checkbox" ${cOn ? 'checked' : ''}
+                                           onchange="App.toggleBundleComponent(${sIdx}, ${iIdx}, '${ck}', this.checked)">
+                                    ${esc(cObj.shortLabel || ck)}
+                                  </label>
+                                `;
+                              }).join('')}
+                            </div>
+                          ` : ''}
 
                           <div style="margin-top:6px;">
                             <div class="row-between" style="margin-bottom:4px;">
@@ -1529,6 +2374,7 @@ const App = (() => {
                                        value="${esc(sl.remark || '')}" placeholder="Ghi chú dòng con"
                                        oninput="App.updateSubLine(${sIdx}, ${iIdx}, ${slIdx}, 'remark', this.value)">
                                 <button class="btn btn-sm btn-danger" style="padding:2px 6px;font-size:11px;"
+                                        title="${sl.component_key ? 'Xóa dòng này sẽ trừ luôn giá cấu phần tương ứng khỏi gói' : 'Xóa dòng mô tả con'}"
                                         onclick="App.removeSubLine(${sIdx}, ${iIdx}, ${slIdx})">×</button>
                               </div>
                             `).join('')}
@@ -1539,21 +2385,21 @@ const App = (() => {
                                  oninput="App.updateItemField(${sIdx}, ${iIdx}, 'unit', this.value)">
                         </td>
                         <td class="r">
-                          <input type="number" id="input-qty-${sIdx}-${iIdx}" class="num" style="width:56px;padding:5px" min="1" value="${it.quantity || 1}"
+                          <input type="number" id="input-qty-${sIdx}-${iIdx}" class="num" style="width:54px;padding:5px" min="1" value="${it.quantity || 1}"
                                  onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
                                  oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'quantity', this.value, this)"
                                  onblur="App.handleItemPriceBlur(${sIdx}, ${iIdx}, 'quantity', this)">
                         </td>
                         ${showCost ? `
                           <td class="r cost-col">
-                            <input type="number" id="input-cost-${sIdx}-${iIdx}" class="num" style="width:115px;padding:5px;background:#fffbeb" min="0" value="${it.cost_price || 0}"
+                            <input type="number" id="input-cost-${sIdx}-${iIdx}" class="num" style="width:110px;padding:5px;background:#fffbeb" min="0" value="${it.cost_price || 0}"
                                    onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
                                    oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'cost_price', this.value, this)"
                                    onblur="App.handleItemPriceBlur(${sIdx}, ${iIdx}, 'cost_price', this)">
                           </td>
                         ` : ''}
                         <td class="r">
-                          <input type="number" id="input-base-${sIdx}-${iIdx}" class="num" style="width:120px;padding:5px" min="0" value="${it.base_price || 0}"
+                          <input type="number" id="input-base-${sIdx}-${iIdx}" class="num" style="width:116px;padding:5px" min="0" value="${it.base_price || 0}"
                                  onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
                                  oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'base_price', this.value, this)"
                                  onblur="App.handleItemPriceBlur(${sIdx}, ${iIdx}, 'base_price', this)">
@@ -1562,7 +2408,7 @@ const App = (() => {
                           <div style="display:flex;align-items:center;justify-content:flex-end;gap:3px;">
                             <span style="font-size:12px;color:var(--muted);font-weight:700;">×</span>
                             <input type="number" id="input-adj-${sIdx}-${iIdx}" class="num" min="0" step="0.01"
-                                   style="width:96px;padding:5px;color:${Number(it.adjustment ?? 1) < 1 ? 'var(--red)' : Number(it.adjustment ?? 1) > 1 ? 'var(--green)' : 'inherit'};font-weight:700;"
+                                   style="width:90px;padding:5px;color:${Number(it.adjustment ?? 1) < 1 ? 'var(--red)' : Number(it.adjustment ?? 1) > 1 ? 'var(--green)' : 'inherit'};font-weight:700;"
                                    value="${it.adjustment ?? 1}"
                                    onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
                                    oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'adjustment', this.value, this)"
@@ -1573,7 +2419,7 @@ const App = (() => {
                           </div>
                         </td>
                         <td class="r">
-                          <input type="number" id="input-unit-${sIdx}-${iIdx}" class="num" style="width:125px;padding:5px;font-weight:700;background:#f0fdf4;" min="0"
+                          <input type="number" id="input-unit-${sIdx}-${iIdx}" class="num" style="width:120px;padding:5px;font-weight:700;background:#f0fdf4;" min="0"
                                  value="${it.unit_price || 0}"
                                  onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
                                  oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'unit_price', this.value, this)"
@@ -1581,10 +2427,10 @@ const App = (() => {
                           <div id="below-cost-${sIdx}-${iIdx}" style="color:var(--red);font-size:10.5px;font-weight:700;display:${belowCost ? 'block' : 'none'};">⚠️ Thấp hơn Cost!</div>
                         </td>
                         <td class="r" id="cell-total-${sIdx}-${iIdx}" style="font-weight:700;">
-                          ${fmtVnd(it.total_price)}
+                          ${isIncluded ? fmtVnd(it.total_price) : '<span style="color:#94a3b8;">0</span>'}
                         </td>
                         <td>
-                          <input type="text" style="width:100px;padding:5px" value="${esc(it.remark || '')}" placeholder="KYOWA JP..."
+                          <input type="text" style="width:96px;padding:5px" value="${esc(it.remark || '')}" placeholder="KYOWA JP..."
                                  oninput="App.updateItemField(${sIdx}, ${iIdx}, 'remark', this.value)">
                         </td>
                         <td class="c">
@@ -1595,7 +2441,7 @@ const App = (() => {
       }).join('')}
                   ${sec.showSubtotal ? `
                     <tr class="sub-row">
-                      <td colspan="${showCost ? 9 : 8}" class="r">${esc(sec.subtotalLabel || 'Cộng nhóm')}</td>
+                      <td colspan="${(showCost ? 9 : 8) + (priceDisplayMode === 'custom_groups' ? 1 : 0)}" class="r">${esc(sec.subtotalLabel || 'Cộng nhóm')}</td>
                       <td class="r" id="sec-subtotal-${sIdx}">${fmtVnd(sec.subtotal)}</td>
                       <td colspan="2"></td>
                     </tr>
@@ -1604,7 +2450,8 @@ const App = (() => {
               </table>
             </div>
           </div>
-        `).join('')}
+        `;
+      }).join('')}
       </div>
 
       <div class="grid-2">
@@ -1640,8 +2487,18 @@ const App = (() => {
                      oninput="App.updateTermField('warranty_months', Number(this.value))">
             </label>
             <label class="field" style="grid-column: 1 / -1;">
-              ⑤ Ghi chú phạm vi kỹ thuật / điều kiện áp dụng
-              <textarea rows="2" oninput="App.updateTermField('note_5_vi', this.value)">${esc(q.terms?.note_5_vi || '')}</textarea>
+              ⑤ Ghi chú phạm vi Lắp đặt, Vận chuyển & điều kiện áp dụng (Mã 12)
+              <div class="note-preset-row">
+                <button type="button" class="btn btn-sm" onclick="App.applyNote5InstallPreset('none')">Chưa gồm Lắp đặt & VC</button>
+                <button type="button" class="btn btn-sm" onclick="App.applyNote5InstallPreset('ship_only')">Đã gồm VC, chưa Lắp đặt</button>
+                <button type="button" class="btn btn-sm" onclick="App.applyNote5InstallPreset('install_only')">Đã gồm Lắp đặt, chưa VC</button>
+                <button type="button" class="btn btn-sm" onclick="App.applyNote5InstallPreset('both')">Đã gồm cả Lắp đặt & VC</button>
+                <button type="button" class="btn btn-sm btn-navy" onclick="App.syncNote5FromServices()"
+                        title="Tự động điền ghi chú theo trạng thái mục Vận chuyển (${svcCov.hasShip ? 'Có' : 'Chưa có'}) & Lắp đặt (${svcCov.hasInstall ? 'Có' : 'Chưa có'}) đang có trong báo giá">
+                  🔄 Tự khớp theo DV (${svcCov.hasShip ? 'Có VC' : 'Ko VC'} · ${svcCov.hasInstall ? 'Có LĐ' : 'Ko LĐ'})
+                </button>
+              </div>
+              <textarea id="note5Textarea" rows="2" oninput="App.updateTermField('note_5_vi', this.value)">${esc(q.terms?.note_5_vi || '')}</textarea>
             </label>
             <label class="field" style="grid-column: 1 / -1;">
               ⑥ Phương pháp thanh toán (Mỗi dòng 1 đợt thanh toán)
@@ -1869,6 +2726,293 @@ const App = (() => {
     toast('Đã áp dụng mẫu điều kiện thương mại!');
   }
 
+  function toggleAutoCalcMgmt(checked) {
+    const q = state.activeQuote;
+    if (!q) return;
+    q.terms = q.terms || {};
+    q.terms.auto_calc_mgmt = Boolean(checked);
+    recalcActiveQuoteTotals();
+    renderFlow2();
+    toast(checked ? 'Đã bật tự động tính lại Phí QL & Thiết kế theo tổng thiết bị.' : 'Đã tắt tự động tính Phí QL & Thiết kế (cho phép nhập tay).');
+  }
+
+  function setQuickAddTargetSection(idx) {
+    const q = state.activeQuote;
+    if (!q || !q.sections || q.sections.length === 0) return;
+    const safeIdx = Math.min(Math.max(0, Number(idx || 0)), q.sections.length - 1);
+    state.quickAddTargetSecIdx = safeIdx;
+    renderFlow2();
+  }
+
+  function setQuickTowerProdLine(pl) {
+    state.quickTowerProdLine = pl;
+    const list = state.models.filter(m => m.product_line === pl);
+    if (list.length > 0) {
+      state.quickTowerModelCode = String(list[0].model_code);
+    }
+    renderFlow2();
+  }
+
+  function setQuickTowerModelCode(code) {
+    state.quickTowerModelCode = String(code);
+    renderFlow2();
+  }
+
+  function setQuickTowerInsertMode(mode) {
+    state.quickTowerInsertMode = mode === 'tower_bundle' ? 'tower_bundle' : 'itemized';
+  }
+
+  function getSelectedQuickTowerModel() {
+    const list = state.models.filter(m => m.product_line === state.quickTowerProdLine);
+    return list.find(m => String(m.model_code) === String(state.quickTowerModelCode)) || list[0] || state.models[0];
+  }
+
+  function insertTowerIntoSection(secIdx) {
+    const q = state.activeQuote;
+    const m = getSelectedQuickTowerModel();
+    if (!q || !m) return;
+    if (!q.sections || q.sections.length === 0) {
+      q.sections = [{ id: 'sec-1', code: 'A1./ Khu vực 1', title: 'A1./ Khu vực 1', showSubtotal: true, subtotalLabel: 'TOTAL (A1)', items: [] }];
+    }
+    const safeIdx = Math.min(Math.max(0, Number(secIdx || 0)), q.sections.length - 1);
+    const sec = q.sections[safeIdx];
+    const newItems = buildItemsForTowerModel(m, state.quickTowerInsertMode || 'itemized', {}, {}, `s${safeIdx}-${Date.now()}`);
+    sec.items = sec.items || [];
+    sec.model_ref = { product_line: m.product_line, model_code: String(m.model_code) };
+    sec.excluded_default_insts = sec.excluded_default_insts || {};
+    newItems.forEach(ni => {
+      ni.stt = String(sec.items.length + 1);
+      sec.items.push(ni);
+    });
+    state.quickAddTargetSecIdx = safeIdx;
+    recalcActiveQuoteTotals();
+    renderFlow2();
+    toast(`Đã nạp Hệ tháp ${m.product_line} - Model ${m.model_code} vào "${sec.title || `Khu vực ${safeIdx + 1}`}" (tự động cập nhật Phí QL/TK & tổng)!`);
+  }
+
+  function addNewAreaWithTower() {
+    const q = state.activeQuote;
+    const m = getSelectedQuickTowerModel();
+    if (!q || !m) return;
+    q.sections = q.sections || [];
+
+    // Đếm các khu vực sản xuất hiện có (trước mục B./Khác nếu có) để đặt tên gọn A1, A2, A3...
+    const secBIdx = q.sections.findIndex(s => {
+      const t = `${s.code || ''} ${s.title || ''}`.toLowerCase();
+      return t.startsWith('b.') || t.startsWith('b/') || t.includes('khác') || t.includes('dịch vụ');
+    });
+    const prodSecCount = secBIdx >= 0 ? secBIdx : q.sections.length;
+    const areaNum = prodSecCount + 1;
+    const areaTitle = `A${areaNum}./ Khu vực ${areaNum} – Hệ tháp ${m.product_line} Model ${m.model_code}`;
+    const newItems = buildItemsForTowerModel(m, state.quickTowerInsertMode || 'itemized', {}, {}, `area${areaNum}-${Date.now()}`);
+
+    const newSec = {
+      id: 'sec-' + Date.now(),
+      code: areaTitle,
+      title: areaTitle,
+      showSubtotal: true,
+      subtotalLabel: `TOTAL (A${areaNum})`,
+      bundleMode: state.quickTowerInsertMode === 'tower_bundle' ? 'bundled_set' : 'itemized',
+      model_ref: { product_line: m.product_line, model_code: String(m.model_code) },
+      excluded_default_insts: {},
+      items: newItems
+    };
+
+    let insertAt = q.sections.length;
+    if (secBIdx >= 0) {
+      q.sections.splice(secBIdx, 0, newSec);
+      insertAt = secBIdx;
+    } else {
+      q.sections.push(newSec);
+      insertAt = q.sections.length - 1;
+    }
+
+    state.quickAddTargetSecIdx = insertAt;
+    recalcActiveQuoteTotals();
+    renderFlow2();
+    toast(`Đã tạo "${areaTitle}" kèm đầy đủ cấu hình & tự động cập nhật Phí QL/TK!`);
+  }
+
+  function setQuotePriceDisplayMode(mode) {
+    const q = state.activeQuote;
+    if (!q) return;
+    q.terms = q.terms || {};
+    q.terms.price_display_mode = mode;
+    if (mode !== 'custom_groups') {
+      state.selectedGroupItemKeys = [];
+    }
+    if (state.activeTab === 'print') {
+      renderPrintView();
+    } else {
+      renderFlow2();
+    }
+    const modeNames = {
+      itemized: 'Chi tiết từng thiết bị',
+      per_section: '1 giá từng hệ / khu vực',
+      single_total: '1 giá tổng toàn bộ',
+      custom_groups: 'Gộp nhóm linh hoạt'
+    };
+    toast(`Chế độ hiển thị giá: ${modeNames[mode] || mode} (Tổng báo giá không thay đổi).`);
+  }
+
+  function setQuoteSpecDetailLevel(level) {
+    const q = state.activeQuote;
+    if (!q) return;
+    q.terms = q.terms || {};
+    q.terms.spec_detail_level = level === 'basic' ? 'basic' : 'detailed';
+    if (state.activeTab === 'print') {
+      renderPrintView();
+    } else {
+      renderFlow2();
+    }
+    toast(level === 'basic'
+      ? 'Thông số gửi khách: Bản cơ bản gọn (ẩn kW, pha, V, Hz, 4P, IE3; vẫn lưu đủ dữ liệu gốc).'
+      : 'Thông số gửi khách: Bản chi tiết đầy đủ.'
+    );
+  }
+
+  function setCustomGroupNameInput(val) {
+    state.customGroupNameInput = val;
+  }
+
+  function toggleGroupSelectItem(itemKey, checked) {
+    const cur = new Set(state.selectedGroupItemKeys || []);
+    if (checked) cur.add(itemKey);
+    else cur.delete(itemKey);
+    state.selectedGroupItemKeys = Array.from(cur);
+    const cntEl = document.getElementById('groupSelCount');
+    if (cntEl) cntEl.textContent = state.selectedGroupItemKeys.length;
+  }
+
+  function mergeSelectedItemsIntoGroup() {
+    const q = state.activeQuote;
+    if (!q) return;
+    const keys = state.selectedGroupItemKeys || [];
+    if (keys.length < 2) {
+      toast('Vui lòng tích chọn ít nhất 2 hạng mục ở cột "Gộp" để gộp thành 1 nhóm giá!');
+      return;
+    }
+    const inp = document.getElementById('customGroupNameInput');
+    let groupName = (inp ? inp.value : state.customGroupNameInput || '').trim();
+    if (!groupName) {
+      const existingCount = new Set(
+        (q.sections || []).flatMap(s => (s.items || []).map(x => String(x.merge_group || '').trim()).filter(Boolean))
+      ).size;
+      groupName = `Nhóm gộp thiết bị ${existingCount + 1}`;
+    }
+    let count = 0;
+    keys.forEach(k => {
+      const [sIdx, iIdx] = k.split(':').map(Number);
+      const it = q.sections?.[sIdx]?.items?.[iIdx];
+      if (it && it.included !== false) {
+        it.merge_group = groupName;
+        count++;
+      }
+    });
+    state.selectedGroupItemKeys = [];
+    state.customGroupNameInput = '';
+    renderFlow2();
+    toast(`Đã gộp ${count} hạng mục vào nhóm "${groupName}" (hiển thị 1 giá chung khi in/xuất)!`);
+  }
+
+  function ungroupSelectedItems() {
+    const q = state.activeQuote;
+    if (!q) return;
+    const keys = state.selectedGroupItemKeys || [];
+    if (keys.length === 0) {
+      toast('Vui lòng tích chọn ít nhất 1 hạng mục để tách khỏi nhóm gộp.');
+      return;
+    }
+    keys.forEach(k => {
+      const [sIdx, iIdx] = k.split(':').map(Number);
+      const it = q.sections?.[sIdx]?.items?.[iIdx];
+      if (it) it.merge_group = '';
+    });
+    state.selectedGroupItemKeys = [];
+    renderFlow2();
+    toast('Đã tách các hạng mục đã chọn về hiển thị giá riêng lẻ.');
+  }
+
+  function clearItemMergeGroup(sIdx, iIdx) {
+    const it = state.activeQuote?.sections?.[sIdx]?.items?.[iIdx];
+    if (!it) return;
+    it.merge_group = '';
+    renderFlow2();
+  }
+
+  function toggleItemIncluded(sIdx, iIdx, checked) {
+    const it = state.activeQuote?.sections?.[sIdx]?.items?.[iIdx];
+    if (!it) return;
+    it.included = Boolean(checked);
+    recalcActiveQuoteTotals();
+    renderFlow2();
+    toast(checked
+      ? `Đã đưa "${it.name_vi || 'hạng mục'}" vào báo giá & tính lại tổng.`
+      : `Đã bỏ "${it.name_vi || 'hạng mục'}" khỏi báo giá (giữ lại dòng để đối chiếu, tự động trừ giá & tính lại phí/VAT).`
+    );
+  }
+
+  function toggleBundleComponent(sIdx, iIdx, compKey, checked) {
+    const q = state.activeQuote;
+    const sec = q?.sections?.[sIdx];
+    const it = sec?.items?.[iIdx];
+    if (!it) return;
+    const bd = hydrateTowerBundleBreakdown(it, q, sec);
+    if (!bd || !bd[compKey]) return;
+
+    bd[compKey].included = Boolean(checked);
+    recomputeTowerBundleFromBreakdown(it);
+
+    // Đồng bộ lại sub_lines tương ứng khi bật/tắt cấu phần trong gói (Mã 04)
+    const refProd = it.model_ref?.product_line || sec?.model_ref?.product_line || q?.selected_product_line;
+    const refCode = it.model_ref?.model_code || sec?.model_ref?.model_code || q?.selected_model_code;
+    const m = (state.models || []).find(x => x.product_line === refProd && String(x.model_code) === String(refCode));
+    if (m) {
+      const exclMap = {};
+      Object.keys(bd).forEach(k => { exclMap[k] = bd[k].included === false; });
+      // Giữ lại các dòng con tùy chỉnh người dùng tự thêm (không có component_key và không phải is_header)
+      const customLines = (it.sub_lines || []).filter(sl => !sl.component_key && !sl.is_header && !sl.is_default_inst);
+      it.sub_lines = [
+        ...buildTowerSubLinesFromModel(m, exclMap, sec?.excluded_default_insts || {}),
+        ...customLines
+      ];
+    } else if (!checked) {
+      it.sub_lines = (it.sub_lines || []).filter(sl => sl.component_key !== compKey);
+    }
+
+    recalcActiveQuoteTotals();
+    renderFlow2();
+    toast(`${checked ? 'Đã chọn lại' : 'Đã bỏ'} "${bd[compKey].shortLabel}" (${checked ? '+' : '-'}${fmtVnd(bd[compKey].base)} đ) — đã tự động tính lại giá, phí QL/TK & VAT!`);
+  }
+
+  function applyNote5InstallPreset(preset) {
+    const q = state.activeQuote;
+    if (!q) return;
+    q.terms = q.terms || {};
+    if (preset === 'none') {
+      q.terms.note_5_vi = 'Giá trên chưa bao gồm chi phí lắp đặt và vận chuyển.';
+    } else if (preset === 'ship_only') {
+      q.terms.note_5_vi = 'Giá trên đã bao gồm chi phí vận chuyển, chưa bao gồm chi phí lắp đặt tại công trình.';
+    } else if (preset === 'install_only') {
+      q.terms.note_5_vi = 'Giá trên đã bao gồm chi phí lắp đặt tại công trình, chưa bao gồm chi phí vận chuyển.';
+    } else if (preset === 'both') {
+      q.terms.note_5_vi = 'Kích thước tháp chỉ dùng để tham khảo, kích thước chính xác phụ thuộc vào bản vẽ.\nBG trên chưa bao gồm phí nâng hạ tại công trình và cẩu đưa vào vị trí lắp đặt.';
+    }
+    const ta = document.getElementById('note5Textarea');
+    if (ta) ta.value = q.terms.note_5_vi;
+    toast('Đã cập nhật Ghi chú ⑤ về Lắp đặt & Vận chuyển!');
+  }
+
+  function syncNote5FromServices() {
+    const q = state.activeQuote;
+    if (!q) return;
+    const { hasShip, hasInstall } = detectServiceCoverage(q);
+    if (!hasShip && !hasInstall) applyNote5InstallPreset('none');
+    else if (hasShip && !hasInstall) applyNote5InstallPreset('ship_only');
+    else if (!hasShip && hasInstall) applyNote5InstallPreset('install_only');
+    else applyNote5InstallPreset('both');
+  }
+
   function applyMgmtFeePercentToQuote(pct, inputEl = null, showToastMsg = false) {
     const q = state.activeQuote;
     if (!q) return;
@@ -1910,6 +3054,8 @@ const App = (() => {
         id: 'mgmt-' + Date.now(),
         stt: '1',
         item_type: 'service_mgmt',
+        included: true,
+        merge_group: '',
         name_jp: '現場管理・設計・試運転費',
         name_vi: 'Thiết kế, quản lí, vận hành',
         specs_text: `Khoản ${cleanPct}% chi phí quản lý, thiết kế`,
@@ -1931,7 +3077,9 @@ const App = (() => {
     const titleEl = document.getElementById('mgmtFeePctTitle');
     if (titleEl) titleEl.textContent = cleanPct;
     const hintEl = document.getElementById('mgmtFeeCalcHint');
-    if (hintEl) hintEl.textContent = `= ${fmtVnd(mgmtInfo.base)} đ`;
+    if (hintEl) {
+      hintEl.textContent = `= ${cleanPct}% × ${fmtVnd(mgmtInfo.prodBaseSum)} đ (tổng thiết bị ${mgmtInfo.areaCount > 1 ? `${mgmtInfo.areaCount} khu vực` : 'sản xuất'}) = ${fmtVnd(mgmtInfo.base)} đ`;
+    }
     [0, 3, 5, 8, 10].forEach(p => {
       const btn = document.getElementById(`mgmtPctBtn-${p}`);
       if (btn) btn.classList.toggle('btn-navy', Number(cleanPct) === p);
@@ -1990,7 +3138,7 @@ const App = (() => {
       if (q.sections && q.sections.length > 1 && q.sections[0]) {
         q.sections[0].items = (q.sections[0].items || []).filter(it => !isMgmtFeeItem(it));
       }
-      let secB = (q.sections || []).find((s, idx) => idx > 0 || (s.code || '').startsWith('B'));
+      let secB = (q.sections || []).find((s, idx) => idx > 0 && ((s.code || '').startsWith('B') || (s.title || '').toLowerCase().includes('khác')));
       if (!secB && q.sections) {
         secB = {
           id: 'sec-b',
@@ -2010,9 +3158,11 @@ const App = (() => {
             id: 'mgmt-' + Date.now(),
             stt: '1',
             item_type: 'service_mgmt',
+            included: true,
+            merge_group: '',
             name_jp: '現場管理・設計・試運転費',
             name_vi: 'Thiết kế, quản lí, vận hành',
-            specs_text: ``,
+            specs_text: '',
             unit: 'Lot/Lần',
             quantity: 1,
             cost_price: defaultMgmtCost,
@@ -2025,7 +3175,7 @@ const App = (() => {
           secB.items.forEach((it, idx) => { it.stt = String(idx + 1); });
         }
       }
-      toast(`Chế độ: Tách khoản Quản lý & Thiết kế (${mgmtPct}%) xuống mục B. Khác (Không cộng trùng ở mục A).`);
+      toast(`Chế độ: Tách khoản Quản lý & Thiết kế (${mgmtPct}%) xuống mục B. Khác (Không cộng trùng).`);
     } else if (mode === 'included_in_a') {
       q.sections.forEach((sec, idx) => {
         if (idx > 0 || (sec.code || '').startsWith('B')) {
@@ -2039,6 +3189,8 @@ const App = (() => {
             id: 'mgmt-' + Date.now(),
             stt: String(q.sections[0].items.length + 1),
             item_type: 'service_mgmt',
+            included: true,
+            merge_group: '',
             name_jp: '現場管理・設計・試運転費',
             name_vi: `Chi phí quản lý, thiết kế (${mgmtPct}%)`,
             specs_text: '',
@@ -2072,23 +3224,32 @@ const App = (() => {
       q.sections = [{ id: 'sec-1', code: '', title: '', showSubtotal: false, items: [] }];
     }
 
-    let targetSecIdx = 0;
-    if (eq.category === 'service' && q.sections.length > 1) {
-      targetSecIdx = q.sections.length - 1;
-    }
+    // Mã 01: Tôn trọng đúng Khu vực / Nhóm đích người dùng đang chọn!
+    const targetSelect = document.getElementById('quickAddTargetSectionSelect');
+    const chosenIdx = targetSelect ? Number(targetSelect.value) : Number(state.quickAddTargetSecIdx || 0);
+    const targetSecIdx = Math.min(Math.max(0, Number.isFinite(chosenIdx) ? chosenIdx : 0), q.sections.length - 1);
+    state.quickAddTargetSecIdx = targetSecIdx;
     const sec = q.sections[targetSecIdx];
+    const secName = sec.title || sec.code || `Khu vực ${targetSecIdx + 1}`;
 
-    if (eq.is_default_included) {
-      toast(`Lưu ý: "${eq.name_vi}" đã bao gồm mặc định (${eq.default_qty} cái) trong Hệ tháp. Hệ thống thêm với đơn giá chỉ tính cho phần mua thêm vượt định mức!`);
+    // Mã 03: Chỉ gắn cảnh báo "đã gồm mặc định" nếu CHÍNH khu vực đích này đang có hệ tháp
+    const targetHasTower = sectionHasTower(sec);
+    const isAlreadyIncludedInTarget = Boolean(eq.is_default_included && targetHasTower && !(sec.excluded_default_insts && sec.excluded_default_insts[eq.id]));
+
+    if (isAlreadyIncludedInTarget) {
+      toast(`Lưu ý: "${eq.name_vi}" đã gồm mặc định (${eq.default_qty} cái) trong hệ tháp tại "${secName}". Đã gắn nhãn mua thêm ngoài gói mặc định!`);
     }
 
-    const nextStt = String((sec.items?.length || 0) + 1);
+    sec.items = sec.items || [];
+    const nextStt = String(sec.items.length + 1);
     sec.items.push({
       id: 'item-' + Date.now(),
       stt: nextStt,
       item_type: eq.category,
+      included: true,
+      merge_group: '',
       name_jp: eq.name_jp || '',
-      name_vi: eq.name_vi + (eq.is_default_included ? ' (Mua thêm ngoài gói mặc định)' : ''),
+      name_vi: eq.name_vi + (isAlreadyIncludedInTarget ? ' (Mua thêm ngoài gói mặc định)' : ''),
       specs_text: eq.specs || '',
       unit: eq.unit || 'Pc/Cái',
       quantity: 1,
@@ -2101,15 +3262,22 @@ const App = (() => {
       sub_lines: []
     });
 
+    recalcActiveQuoteTotals();
     renderFlow2();
-    toast(`Đã thêm "${eq.name_vi}" vào báo giá!`);
+    toast(`Đã thêm "${eq.name_vi}" vào "${secName}"!`);
   }
 
   function updateSectionField(sIdx, field, val) {
     const sec = state.activeQuote?.sections?.[sIdx];
     if (!sec) return;
     sec[field] = val;
-    if (field === 'title') sec.code = val;
+    if (field === 'title') {
+      sec.code = val;
+      const sel = document.getElementById('quickAddTargetSectionSelect');
+      if (sel && sel.options[sIdx]) {
+        sel.options[sIdx].textContent = `[${sIdx + 1}] ${val || `Nhóm ${sIdx + 1}`} (${(sec.items || []).filter(x => x.included !== false).length} mục)`;
+      }
+    }
     if (field === 'showSubtotal') renderFlow2();
   }
 
@@ -2119,13 +3287,15 @@ const App = (() => {
     const idx = state.activeQuote.sections.length + 1;
     state.activeQuote.sections.push({
       id: 'sec-' + Date.now(),
-      code: `Nhóm ${idx}`,
-      title: `Nhóm hạng mục ${idx}`,
+      code: `Khu vực ${idx}`,
+      title: `Khu vực / Nhóm ${idx}`,
       showSubtotal: true,
       subtotalLabel: `TOTAL (${idx})`,
       items: []
     });
+    state.quickAddTargetSecIdx = state.activeQuote.sections.length - 1;
     renderFlow2();
+    toast(`Đã tạo "Khu vực / Nhóm ${idx}" và chọn sẵn làm đích thêm nhanh!`);
   }
 
   function removeSection(sIdx) {
@@ -2155,8 +3325,13 @@ const App = (() => {
       `,
       onConfirm: () => {
         state.activeQuote.sections.splice(sIdx, 1);
+        if (state.quickAddTargetSecIdx >= state.activeQuote.sections.length) {
+          state.quickAddTargetSecIdx = Math.max(0, state.activeQuote.sections.length - 1);
+        }
+        state.selectedGroupItemKeys = [];
+        recalcActiveQuoteTotals();
         renderFlow2();
-        toast(`Đã xóa nhóm "${secTitle}".`);
+        toast(`Đã xóa nhóm "${secTitle}" & cập nhật lại tổng.`);
       }
     });
   }
@@ -2169,6 +3344,8 @@ const App = (() => {
       id: 'item-' + Date.now(),
       stt: String(sec.items.length + 1),
       item_type: 'custom',
+      included: true,
+      merge_group: '',
       name_jp: '',
       name_vi: 'Hạng mục mới',
       specs_text: '',
@@ -2203,8 +3380,10 @@ const App = (() => {
       `,
       onConfirm: () => {
         sec.items.splice(iIdx, 1);
+        state.selectedGroupItemKeys = [];
+        recalcActiveQuoteTotals();
         renderFlow2();
-        toast(`Đã xóa hạng mục "${itemName}".`);
+        toast(`Đã xóa hạng mục "${itemName}" & tự động tính lại phí, VAT.`);
       }
     });
   }
@@ -2256,19 +3435,19 @@ const App = (() => {
 
         const belowCostEl = document.getElementById(`below-cost-${sIdx}-${iIdx}`);
         if (belowCostEl) {
-          const isBelow = showCost && it.cost_price && it.unit_price < it.cost_price;
+          const isBelow = (it.included !== false) && showCost && it.cost_price && it.unit_price < it.cost_price;
           belowCostEl.style.display = isBelow ? 'block' : 'none';
         }
 
         const cellTotal = document.getElementById(`cell-total-${sIdx}-${iIdx}`);
-        if (cellTotal) cellTotal.textContent = fmtVnd(it.total_price);
+        if (cellTotal) cellTotal.innerHTML = (it.included !== false) ? fmtVnd(it.total_price) : '<span style="color:#94a3b8;">0</span>';
       });
 
       const secSub = document.getElementById(`sec-subtotal-${sIdx}`);
       if (secSub) secSub.textContent = fmtVnd(sec.subtotal);
     });
 
-    const allItems = (q.sections || []).flatMap(s => s.items || []);
+    const allItems = (q.sections || []).flatMap(s => s.items || []).filter(x => x.included !== false);
     const firstFactor = allItems.length > 0 ? Number(allItems[0].adjustment ?? 1) : 1;
     const isUniform = allItems.length > 0 && allItems.every(it => Math.abs(Number(it.adjustment ?? 1) - firstFactor) < 0.0001);
 
@@ -2313,12 +3492,13 @@ const App = (() => {
     const mgmtHint = document.getElementById('mgmtFeeCalcHint');
     if (mgmtHint) {
       const mgmtInfo = computeMgmtFeeAmounts(q);
-      mgmtHint.textContent = `= ${fmtVnd(mgmtInfo.base)} đ`;
+      mgmtHint.textContent = `= ${mgmtInfo.pct}% × ${fmtVnd(mgmtInfo.prodBaseSum)} đ (tổng thiết bị ${mgmtInfo.areaCount > 1 ? `${mgmtInfo.areaCount} khu vực` : 'sản xuất'}) = ${fmtVnd(mgmtInfo.base)} đ`;
     }
   }
 
   function updateItemPriceCalc(sIdx, iIdx, field, rawVal, inputEl = null) {
-    const it = state.activeQuote?.sections?.[sIdx]?.items?.[iIdx];
+    const q = state.activeQuote;
+    const it = q?.sections?.[sIdx]?.items?.[iIdx];
     if (!it) return;
 
     const strVal = String(rawVal ?? '').trim();
@@ -2332,6 +3512,12 @@ const App = (() => {
     }
 
     const numVal = Math.max(0, Number(rawVal || 0));
+
+    // Nếu người dùng tự gõ đè Giá gốc cơ bản của chính dòng Phí QL/TK -> tạm tắt auto_calc_mgmt để tôn trọng nhập tay
+    if (field === 'base_price' && isMgmtFeeItem(it)) {
+      q.terms = q.terms || {};
+      q.terms.auto_calc_mgmt = false;
+    }
 
     if (field === 'quantity') {
       it.quantity = Math.max(1, Math.round(numVal));
@@ -2451,8 +3637,27 @@ const App = (() => {
   }
 
   function removeSubLine(sIdx, iIdx, slIdx) {
-    const it = state.activeQuote?.sections?.[sIdx]?.items?.[iIdx];
+    const q = state.activeQuote;
+    const sec = q?.sections?.[sIdx];
+    const it = sec?.items?.[iIdx];
     if (!it || !it.sub_lines) return;
+    const removed = it.sub_lines[slIdx];
+
+    // Mã 04: Nếu xóa dòng cấu phần chính (Quạt, Bơm, Tủ điện, Stage) khỏi gói tower_bundle -> trừ đúng giá cấu phần đó!
+    if (it.item_type === 'tower_bundle' && removed && removed.component_key && ['fan', 'pump', 'panel', 'stage'].includes(removed.component_key)) {
+      const ck = removed.component_key;
+      const bd = hydrateTowerBundleBreakdown(it, q, sec);
+      if (bd && bd[ck]) {
+        bd[ck].included = false;
+        it.sub_lines = it.sub_lines.filter(sl => sl.component_key !== ck);
+        recomputeTowerBundleFromBreakdown(it);
+        recalcActiveQuoteTotals();
+        renderFlow2();
+        toast(`Đã xóa "${bd[ck].shortLabel}" khỏi gói (-${fmtVnd(bd[ck].base)} đ) — đã tự động tính lại tổng & phí QL/TK!`);
+        return;
+      }
+    }
+
     it.sub_lines.splice(slIdx, 1);
     renderFlow2();
   }
@@ -2745,6 +3950,8 @@ const App = (() => {
       const data = await api(`/api/quotations/${id}`);
       state.activeQuote = data;
       state.revisionsList = data.revisions || [];
+      state.quickAddTargetSecIdx = 0;
+      state.selectedGroupItemKeys = [];
       updateActiveQuoteBadge();
       renderFlow2();
       renderPrintView();
@@ -3029,6 +4236,260 @@ const App = (() => {
     `;
   }
 
+  function buildRenderedQuoteRows(q) {
+    const t = q?.terms || {};
+    const mode = t.price_display_mode || 'itemized';
+    const specLevel = t.spec_detail_level || 'detailed';
+    const sections = q?.sections || [];
+    const rows = [];
+    const romanLabels = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+
+    const fmtSpec = (txt) => formatSpecForLevel(txt, specLevel);
+
+    function pushItemDetailLines(it, baseIndent = 1) {
+      const sp = fmtSpec(it.specs_text || '');
+      if (sp) {
+        rows.push({ kind: 'spec_line', text: sp, indentLevel: baseIndent });
+      }
+      if (it.sub_lines && it.sub_lines.length > 0) {
+        it.sub_lines.forEach(sl => {
+          const rawText = String(sl.text || '');
+          const isPlus = rawText.startsWith('   +');
+          const displayTxt = sl.is_spec_box ? fmtSpec(rawText.trim()) : rawText.trim();
+          if (!displayTxt) return;
+          const displayRemark = (specLevel === 'basic' && sl.is_spec_box) ? '' : (sl.remark || '');
+          rows.push({
+            kind: 'sub_line',
+            text: displayTxt,
+            rightText: sl.right_text || '',
+            remark: displayRemark,
+            indentLevel: isPlus ? baseIndent + 1 : baseIndent
+          });
+        });
+      }
+    }
+
+    if (mode === 'single_total') {
+      // Mã 06 & Mã 04: 1 giá tổng toàn bộ — liệt kê đầy đủ thiết bị nhưng ẩn đơn giá & thành tiền từng mục
+      let runningStt = 1;
+      sections.forEach(sec => {
+        const activeItems = (sec.items || []).filter(it => it.included !== false);
+        if (activeItems.length === 0) return;
+        if (sec.title && sec.title.trim()) {
+          rows.push({ kind: 'sec_header', title: sec.title });
+        }
+        activeItems.forEach(it => {
+          rows.push({
+            kind: 'item',
+            stt: it.stt || String(runningStt),
+            title: `${it.name_jp ? it.name_jp + ' ' : ''}${it.name_vi || ''}`,
+            unit: it.unit || '',
+            qty: it.quantity || 1,
+            unitPrice: null,
+            totalPrice: null,
+            remark: it.remark || '',
+            hidePrices: true,
+            rowClass: ''
+          });
+          runningStt++;
+          pushItemDetailLines(it, 1);
+        });
+      });
+
+      rows.push({
+        kind: 'subtotal',
+        label: t.total_label_before_tax || 'TỔNG GIÁ TRỌN GÓI TRƯỚC THUẾ (TOTAL Before TAX)',
+        amount: q.subtotal_before_tax
+      });
+      return { rows, showBeforeTaxInSummary: false, mode, specLevel };
+    }
+
+    if (mode === 'per_section') {
+      // Mã 06: 1 giá trọn gói cho từng hệ / khu vực — ẩn giá thiết bị lẻ bên trong
+      let secDisplayIdx = 0;
+      sections.forEach(sec => {
+        const activeItems = (sec.items || []).filter(it => it.included !== false);
+        if (activeItems.length === 0) return;
+        const secStt = romanLabels[secDisplayIdx] || String(secDisplayIdx + 1);
+        secDisplayIdx++;
+        const secTitle = (sec.title && sec.title.trim()) ? sec.title.trim() : `Hệ thống / Khu vực ${secDisplayIdx}`;
+        rows.push({
+          kind: 'item',
+          stt: secStt,
+          title: secTitle,
+          unit: 'Hệ / Gói',
+          qty: 1,
+          unitPrice: sec.subtotal,
+          totalPrice: sec.subtotal,
+          remark: `${activeItems.length} hạng mục`,
+          hidePrices: false,
+          rowClass: 'bundle-section-row'
+        });
+        activeItems.forEach(it => {
+          const itemLabel = `- ${it.name_jp ? it.name_jp + ' ' : ''}${it.name_vi || ''}`;
+          rows.push({
+            kind: 'sub_line',
+            text: itemLabel,
+            rightText: `x ${it.quantity || 1} ${it.unit || ''}`.trim(),
+            remark: it.remark || '',
+            indentLevel: 1
+          });
+          pushItemDetailLines(it, 2);
+        });
+      });
+      return { rows, showBeforeTaxInSummary: true, mode, specLevel };
+    }
+
+    if (mode === 'custom_groups') {
+      // Mã 07: Gộp nhóm linh hoạt (VD: gộp 1+3+5 thành 1 giá; tách riêng 2, 4)
+      const allActiveItems = [];
+      sections.forEach((sec, sIdx) => {
+        (sec.items || []).forEach(it => {
+          if (it.included !== false) allActiveItems.push({ it, sIdx });
+        });
+      });
+
+      const groupSecMap = new Map();
+      allActiveItems.forEach(({ it, sIdx }) => {
+        const g = String(it.merge_group || '').trim();
+        if (!g) return;
+        if (!groupSecMap.has(g)) groupSecMap.set(g, new Set());
+        groupSecMap.get(g).add(sIdx);
+      });
+      const hasCrossSecGroup = Array.from(groupSecMap.values()).some(set => set.size > 1);
+      const emittedGroups = new Set();
+
+      sections.forEach((sec, sIdx) => {
+        const activeItems = (sec.items || []).filter(it => it.included !== false);
+        if (activeItems.length === 0) return;
+
+        const secVisibleRows = [];
+        let localStt = 1;
+
+        activeItems.forEach(it => {
+          const gName = String(it.merge_group || '').trim();
+          if (!gName) {
+            secVisibleRows.push({ type: 'single', stt: String(localStt++), it });
+          } else if (!emittedGroups.has(gName)) {
+            emittedGroups.add(gName);
+            const members = allActiveItems
+              .filter(x => String(x.it.merge_group || '').trim() === gName)
+              .map(x => x.it);
+            const groupTotal = members.reduce((sum, m) => sum + Number(m.total_price || 0), 0);
+            secVisibleRows.push({ type: 'group', stt: String(localStt++), gName, members, groupTotal });
+          }
+        });
+
+        if (secVisibleRows.length === 0) return;
+
+        if (sec.title && sec.title.trim()) {
+          rows.push({ kind: 'sec_header', title: sec.title });
+        }
+
+        secVisibleRows.forEach(entry => {
+          if (entry.type === 'single') {
+            const it = entry.it;
+            rows.push({
+              kind: 'item',
+              stt: entry.stt,
+              title: `${it.name_jp ? it.name_jp + ' ' : ''}${it.name_vi || ''}`,
+              unit: it.unit || '',
+              qty: it.quantity || 1,
+              unitPrice: it.unit_price,
+              totalPrice: it.total_price,
+              remark: it.remark || '',
+              hidePrices: false,
+              rowClass: ''
+            });
+            pushItemDetailLines(it, 1);
+          } else {
+            rows.push({
+              kind: 'item',
+              stt: entry.stt,
+              title: entry.gName,
+              unit: 'Gói / Set',
+              qty: 1,
+              unitPrice: entry.groupTotal,
+              totalPrice: entry.groupTotal,
+              remark: `Gộp ${entry.members.length} mục`,
+              hidePrices: false,
+              rowClass: 'group-parent-row'
+            });
+            entry.members.forEach(mem => {
+              rows.push({
+                kind: 'sub_line',
+                text: `- ${mem.name_jp ? mem.name_jp + ' ' : ''}${mem.name_vi || ''}`,
+                rightText: `x ${mem.quantity || 1} ${mem.unit || ''}`.trim(),
+                remark: mem.remark || '',
+                indentLevel: 1
+              });
+              pushItemDetailLines(mem, 2);
+            });
+          }
+        });
+
+        if (!hasCrossSecGroup && sec.showSubtotal) {
+          rows.push({
+            kind: 'subtotal',
+            label: sec.subtotalLabel || 'TOTAL',
+            amount: sec.subtotal
+          });
+        }
+      });
+
+      const anySecSubtotalShown = !hasCrossSecGroup && sections.some(s => s.showSubtotal && (s.items || []).some(x => x.included !== false));
+      if (!anySecSubtotalShown) {
+        rows.push({
+          kind: 'subtotal',
+          label: t.total_label_before_tax || 'TOTAL',
+          amount: q.subtotal_before_tax
+        });
+      }
+      return { rows, showBeforeTaxInSummary: anySecSubtotalShown, mode, specLevel };
+    }
+
+    // Mặc định: mode === 'itemized' (Mã 08: chi tiết giá từng thiết bị)
+    sections.forEach(sec => {
+      const activeItems = (sec.items || []).filter(it => it.included !== false);
+      if (activeItems.length === 0) return;
+      if (sec.title && sec.title.trim()) {
+        rows.push({ kind: 'sec_header', title: sec.title });
+      }
+      activeItems.forEach(it => {
+        rows.push({
+          kind: 'item',
+          stt: it.stt || '',
+          title: `${it.name_jp ? it.name_jp + ' ' : ''}${it.name_vi || ''}`,
+          unit: it.unit || '',
+          qty: it.quantity || 1,
+          unitPrice: it.unit_price,
+          totalPrice: it.total_price,
+          remark: it.remark || '',
+          hidePrices: false,
+          rowClass: ''
+        });
+        pushItemDetailLines(it, 1);
+      });
+      if (sec.showSubtotal) {
+        rows.push({
+          kind: 'subtotal',
+          label: sec.subtotalLabel || 'TOTAL',
+          amount: sec.subtotal
+        });
+      }
+    });
+
+    const anySecSubtotal = sections.some(s => s.showSubtotal && (s.items || []).some(x => x.included !== false));
+    if (!anySecSubtotal) {
+      rows.push({
+        kind: 'subtotal',
+        label: t.total_label_before_tax || 'TOTAL',
+        amount: q.subtotal_before_tax
+      });
+    }
+    return { rows, showBeforeTaxInSummary: anySecSubtotal, mode, specLevel };
+  }
+
   function renderPrintView() {
     const container = document.getElementById('view-print');
     if (!container) return;
@@ -3045,85 +4506,70 @@ const App = (() => {
     const wmOpacity = Number(state.printWatermarkOpacity || 0.10);
     const wmSize = Number(state.printWatermarkSize || 490);
 
+    const rendered = buildRenderedQuoteRows(q);
     let tableRowsHtml = '';
-    (q.sections || []).forEach(sec => {
-      if (sec.title && sec.title.trim()) {
+    rendered.rows.forEach(r => {
+      if (r.kind === 'sec_header') {
         tableRowsHtml += `
           <tr class="sec-header-row">
-            <td colspan="7">${esc(sec.title)}</td>
+            <td colspan="7">${esc(r.title)}</td>
           </tr>
         `;
-      }
-      (sec.items || []).forEach(it => {
+      } else if (r.kind === 'item') {
+        tableRowsHtml += `
+          <tr class="${esc(r.rowClass || '')}">
+            <td style="text-align:center;font-weight:600;">${esc(r.stt)}</td>
+            <td><strong>${esc(r.title)}</strong></td>
+            <td style="text-align:center;">${esc(r.unit)}</td>
+            <td style="text-align:center;">${esc(r.qty)}</td>
+            <td style="text-align:right;">${r.hidePrices ? '' : fmtPdfNum(r.unitPrice)}</td>
+            <td style="text-align:right;font-weight:600;">${r.hidePrices ? '' : fmtPdfNum(r.totalPrice)}</td>
+            <td style="text-align:center;font-weight:700;">${esc(r.remark || '')}</td>
+          </tr>
+        `;
+      } else if (r.kind === 'spec_line') {
+        const padPx = r.indentLevel >= 2 ? 28 : 18;
         tableRowsHtml += `
           <tr>
-            <td style="text-align:center;font-weight:600;">${esc(it.stt)}</td>
-            <td><strong>${esc(it.name_jp ? it.name_jp + ' ' : '')}${esc(it.name_vi)}</strong></td>
-            <td style="text-align:center;">${esc(it.unit)}</td>
-            <td style="text-align:center;">${esc(it.quantity)}</td>
-            <td style="text-align:right;">${fmtPdfNum(it.unit_price)}</td>
-            <td style="text-align:right;font-weight:600;">${fmtPdfNum(it.total_price)}</td>
-            <td style="text-align:center;font-weight:700;">${esc(it.remark || '')}</td>
+            <td></td>
+            <td style="padding-left:${padPx}px;font-size:9pt;color:#334155;">${esc(r.text)}</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
           </tr>
         `;
-
-        if (it.specs_text && it.specs_text.trim()) {
-          tableRowsHtml += `
-            <tr>
-              <td></td>
-              <td style="padding-left:18px;font-size:9pt;color:#334155;">${esc(it.specs_text)}</td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-            </tr>
-          `;
-        }
-
-        if (it.sub_lines && it.sub_lines.length > 0) {
-          it.sub_lines.forEach(sl => {
-            tableRowsHtml += `
-              <tr>
-                <td></td>
-                <td style="padding-left:${sl.text.startsWith('   +') ? '26px' : '10px'};font-size:9pt;">
-                  <div style="display:flex;justify-content:space-between;gap:8px;">
-                    <span>${esc(sl.text.trim())}</span>
-                    ${sl.right_text ? `<span style="white-space:nowrap;">${esc(sl.right_text)}</span>` : ''}
-                  </div>
-                </td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td style="text-align:center;font-weight:700;font-size:8.5pt;">${esc(sl.remark || '')}</td>
-              </tr>
-            `;
-          });
-        }
-      });
-
-      if (sec.showSubtotal) {
+      } else if (r.kind === 'sub_line') {
+        const padPx = r.indentLevel >= 2 ? 26 : 10;
+        tableRowsHtml += `
+          <tr>
+            <td></td>
+            <td style="padding-left:${padPx}px;font-size:9pt;">
+              <div style="display:flex;justify-content:space-between;gap:8px;">
+                <span>${esc(r.text)}</span>
+                ${r.rightText ? `<span style="white-space:nowrap;">${esc(r.rightText)}</span>` : ''}
+              </div>
+            </td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td style="text-align:center;font-weight:700;font-size:8.5pt;">${esc(r.remark || '')}</td>
+          </tr>
+        `;
+      } else if (r.kind === 'subtotal') {
         tableRowsHtml += `
           <tr class="subtotal-row">
-            <td colspan="5">${esc(sec.subtotalLabel || 'TOTAL')}</td>
-            <td style="text-align:right;">${fmtPdfNum(sec.subtotal)}</td>
+            <td colspan="5">${esc(r.label || 'TOTAL')}</td>
+            <td style="text-align:right;">${fmtPdfNum(r.amount)}</td>
             <td></td>
           </tr>
         `;
       }
     });
 
-    const anySecSubtotal = (q.sections || []).some(s => s.showSubtotal);
-    if (!anySecSubtotal) {
-      tableRowsHtml += `
-        <tr class="subtotal-row">
-          <td colspan="5">${esc(t.total_label_before_tax || 'TOTAL')}</td>
-          <td style="text-align:right;">${fmtPdfNum(q.subtotal_before_tax)}</td>
-          <td></td>
-        </tr>
-      `;
-    }
+    const anySecSubtotal = rendered.showBeforeTaxInSummary;
 
     const itemsTableHtml = `
       <table class="kkvn-items-table">
@@ -4048,6 +5494,21 @@ const App = (() => {
           </div>
         </div>
 
+        <div class="print-quick-opts-bar">
+          <div class="cfg-pill-group">
+            <span class="cfg-pill-label">Hiển thị giá:</span>
+            <button type="button" class="btn btn-sm ${rendered.mode === 'itemized' ? 'btn-navy' : ''}" style="padding:2px 8px;font-size:11.5px;" onclick="App.setQuotePriceDisplayMode('itemized')">Chi tiết</button>
+            <button type="button" class="btn btn-sm ${rendered.mode === 'per_section' ? 'btn-navy' : ''}" style="padding:2px 8px;font-size:11.5px;" onclick="App.setQuotePriceDisplayMode('per_section')">1 giá từng hệ</button>
+            <button type="button" class="btn btn-sm ${rendered.mode === 'single_total' ? 'btn-navy' : ''}" style="padding:2px 8px;font-size:11.5px;" onclick="App.setQuotePriceDisplayMode('single_total')">1 giá tổng</button>
+            <button type="button" class="btn btn-sm ${rendered.mode === 'custom_groups' ? 'btn-navy' : ''}" style="padding:2px 8px;font-size:11.5px;" onclick="App.setQuotePriceDisplayMode('custom_groups')">Gộp nhóm</button>
+          </div>
+          <div class="cfg-pill-group">
+            <span class="cfg-pill-label">Thông số:</span>
+            <button type="button" class="btn btn-sm ${rendered.specLevel === 'basic' ? 'btn-navy' : ''}" style="padding:2px 8px;font-size:11.5px;" onclick="App.setQuoteSpecDetailLevel('basic')">Cơ bản (Gọn)</button>
+            <button type="button" class="btn btn-sm ${rendered.specLevel === 'detailed' ? 'btn-navy' : ''}" style="padding:2px 8px;font-size:11.5px;" onclick="App.setQuoteSpecDetailLevel('detailed')">Chi tiết (Đầy đủ)</button>
+          </div>
+        </div>
+
         ${pickerOpen ? `
           <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
             <div class="template-picker-grid">
@@ -4343,73 +5804,67 @@ const App = (() => {
       showWatermark ? getTransparentWatermarkDataUrl(wmOpacity) : Promise.resolve(null)
     ]);
 
+    const rendered = buildRenderedQuoteRows(q);
     let itemsRowsWord = '';
-    (q.sections || []).forEach(sec => {
-      if (sec.title && sec.title.trim()) {
+    rendered.rows.forEach(r => {
+      if (r.kind === 'sec_header') {
         itemsRowsWord += `
           <tr>
             <td colspan="7" style="border:1pt solid #000; padding:4pt 6pt; font-weight:bold; background:#f2f4f8;">
-              ${esc(sec.title)}
+              ${esc(r.title)}
             </td>
           </tr>
         `;
-      }
-      (sec.items || []).forEach(it => {
+      } else if (r.kind === 'item') {
+        const bgRow = (r.rowClass === 'group-parent-row' || r.rowClass === 'bundle-section-row') ? 'background:#f8fafc;' : '';
         itemsRowsWord += `
           <tr>
-            <td style="border:1pt solid #000; padding:3.5pt 4pt; text-align:center; font-weight:bold;">${esc(it.stt)}</td>
-            <td style="border:1pt solid #000; padding:3.5pt 6pt; font-weight:bold;">${esc(it.name_jp ? it.name_jp + ' ' : '')}${esc(it.name_vi)}</td>
-            <td style="border:1pt solid #000; padding:3.5pt 4pt; text-align:center;">${esc(it.unit)}</td>
-            <td style="border:1pt solid #000; padding:3.5pt 4pt; text-align:center;">${esc(it.quantity)}</td>
-            <td style="border:1pt solid #000; padding:3.5pt 6pt; text-align:right;">${fmtPdfNum(it.unit_price)}</td>
-            <td style="border:1pt solid #000; padding:3.5pt 6pt; text-align:right; font-weight:bold;">${fmtPdfNum(it.total_price)}</td>
-            <td style="border:1pt solid #000; padding:3.5pt 4pt; text-align:center; font-weight:bold;">${esc(it.remark || '')}</td>
+            <td style="border:1pt solid #000; padding:3.5pt 4pt; text-align:center; font-weight:bold; ${bgRow}">${esc(r.stt)}</td>
+            <td style="border:1pt solid #000; padding:3.5pt 6pt; font-weight:bold; ${bgRow}">${esc(r.title)}</td>
+            <td style="border:1pt solid #000; padding:3.5pt 4pt; text-align:center; ${bgRow}">${esc(r.unit)}</td>
+            <td style="border:1pt solid #000; padding:3.5pt 4pt; text-align:center; ${bgRow}">${esc(r.qty)}</td>
+            <td style="border:1pt solid #000; padding:3.5pt 6pt; text-align:right; ${bgRow}">${r.hidePrices ? '' : fmtPdfNum(r.unitPrice)}</td>
+            <td style="border:1pt solid #000; padding:3.5pt 6pt; text-align:right; font-weight:bold; ${bgRow}">${r.hidePrices ? '' : fmtPdfNum(r.totalPrice)}</td>
+            <td style="border:1pt solid #000; padding:3.5pt 4pt; text-align:center; font-weight:bold; ${bgRow}">${esc(r.remark || '')}</td>
           </tr>
         `;
-
-        if (it.specs_text && it.specs_text.trim()) {
-          itemsRowsWord += `
-            <tr>
-              <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 4pt;"></td>
-              <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 6pt 2pt 16pt;">${esc(it.specs_text)}</td>
-              <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
-              <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
-              <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
-              <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
-              <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
-            </tr>
-          `;
-        }
-
-        if (it.sub_lines && it.sub_lines.length > 0) {
-          it.sub_lines.forEach(sl => {
-            const padLeft = sl.text && sl.text.startsWith('   +') ? '22pt' : '10pt';
-            itemsRowsWord += `
-              <tr>
-                <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 4pt;"></td>
-                <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 6pt 2pt ${padLeft};">
-                  <span>${esc((sl.text || '').trim())}</span>
-                  ${sl.right_text ? `<span style="float:right; font-weight:bold;"> &nbsp;&nbsp; ${esc(sl.right_text)}</span>` : ''}
-                </td>
-                <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
-                <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
-                <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
-                <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
-                <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 4pt; text-align:center; font-weight:bold;">${esc(sl.remark || '')}</td>
-              </tr>
-            `;
-          });
-        }
-      });
-
-      if (sec.showSubtotal) {
+      } else if (r.kind === 'spec_line') {
+        const padLeft = r.indentLevel >= 2 ? '24pt' : '16pt';
+        itemsRowsWord += `
+          <tr>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 4pt;"></td>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 6pt 2pt ${padLeft};">${esc(r.text)}</td>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+          </tr>
+        `;
+      } else if (r.kind === 'sub_line') {
+        const padLeft = r.indentLevel >= 2 ? '22pt' : '10pt';
+        itemsRowsWord += `
+          <tr>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 4pt;"></td>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 6pt 2pt ${padLeft};">
+              <span>${esc(r.text)}</span>
+              ${r.rightText ? `<span style="float:right; font-weight:bold;"> &nbsp;&nbsp; ${esc(r.rightText)}</span>` : ''}
+            </td>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000;"></td>
+            <td style="border-left:1pt solid #000; border-right:1pt solid #000; padding:2pt 4pt; text-align:center; font-weight:bold;">${esc(r.remark || '')}</td>
+          </tr>
+        `;
+      } else if (r.kind === 'subtotal') {
         itemsRowsWord += `
           <tr>
             <td colspan="5" style="border:1pt solid #000; padding:4pt 8pt; text-align:center; font-weight:bold; background:#f8fafc;">
-              ${esc(sec.subtotalLabel || 'TOTAL')}
+              ${esc(r.label || 'TOTAL')}
             </td>
             <td style="border:1pt solid #000; padding:4pt 6pt; text-align:right; font-weight:bold; background:#f8fafc;">
-              ${fmtPdfNum(sec.subtotal)}
+              ${fmtPdfNum(r.amount)}
             </td>
             <td style="border:1pt solid #000; background:#f8fafc;"></td>
           </tr>
@@ -4417,20 +5872,7 @@ const App = (() => {
       }
     });
 
-    const anySecSubtotal = (q.sections || []).some(s => s.showSubtotal);
-    if (!anySecSubtotal) {
-      itemsRowsWord += `
-        <tr>
-          <td colspan="5" style="border:1pt solid #000; padding:4pt 8pt; text-align:center; font-weight:bold; background:#f8fafc;">
-            ${esc(t.total_label_before_tax || 'TOTAL')}
-          </td>
-          <td style="border:1pt solid #000; padding:4pt 6pt; text-align:right; font-weight:bold; background:#f8fafc;">
-            ${fmtPdfNum(q.subtotal_before_tax)}
-          </td>
-          <td style="border:1pt solid #000; background:#f8fafc;"></td>
-        </tr>
-      `;
-    }
+    const anySecSubtotal = rendered.showBeforeTaxInSummary;
 
     const rawNo = String(q.quote_number || '');
     const mNo = rawNo.match(/^(\d{4}-\d{3})-(\d{2})$/);
@@ -4858,59 +6300,49 @@ xmlns="http://www.w3.org/TR/REC-html40">
       G: { v: '備考 / Ghi Chú', s: 7 }
     }, 26);
 
-    // Items & Sections
-    (q.sections || []).forEach(sec => {
-      if (sec.title && sec.title.trim()) {
+    // Items & Sections (Đồng bộ 4 chế độ hiển thị giá & 2 mức thông số với Bản in / Word)
+    const renderedXlsx = buildRenderedQuoteRows(q);
+    renderedXlsx.rows.forEach(r => {
+      if (r.kind === 'sec_header') {
         const rSec = addRow({
-          A: { v: sec.title, s: 8 },
+          A: { v: r.title, s: 8 },
           B: { v: '', s: 8 }, C: { v: '', s: 8 }, D: { v: '', s: 8 },
           E: { v: '', s: 8 }, F: { v: '', s: 8 }, G: { v: '', s: 8 }
         }, 20);
         merges.push(`A${rSec}:G${rSec}`);
-      }
-
-      (sec.items || []).forEach(it => {
-        const fullTitle = `${it.name_jp ? it.name_jp + ' ' : ''}${it.name_vi || ''}`;
+      } else if (r.kind === 'item') {
         addRow({
-          A: { v: it.stt || '', s: 9 },
-          B: { v: fullTitle, s: 10 },
-          C: { v: it.unit || '', s: 9 },
-          D: { v: Number(it.quantity || 1), t: 'n', s: 9 },
-          E: { v: Number(it.unit_price || 0), t: 'n', s: 12 },
-          F: { v: Number(it.total_price || 0), t: 'n', s: 13 },
-          G: { v: it.remark || '', s: 14 }
+          A: { v: r.stt || '', s: 9 },
+          B: { v: r.title || '', s: 10 },
+          C: { v: r.unit || '', s: 9 },
+          D: { v: Number(r.qty || 1), t: 'n', s: 9 },
+          E: r.hidePrices ? { v: '', s: 12 } : { v: Number(r.unitPrice || 0), t: 'n', s: 12 },
+          F: r.hidePrices ? { v: '', s: 13 } : { v: Number(r.totalPrice || 0), t: 'n', s: 13 },
+          G: { v: r.remark || '', s: 14 }
         }, 20);
-
-        if (it.specs_text && it.specs_text.trim()) {
-          addRow({
-            A: { v: '', s: 9 },
-            B: { v: `   ${it.specs_text}`, s: 11 },
-            C: { v: '', s: 9 }, D: { v: '', s: 9 },
-            E: { v: '', s: 12 }, F: { v: '', s: 13 }, G: { v: '', s: 14 }
-          }, 18);
-        }
-
-        if (it.sub_lines && it.sub_lines.length > 0) {
-          it.sub_lines.forEach(sl => {
-            const subText = sl.right_text
-              ? `${sl.text || ''}   (${sl.right_text})`
-              : (sl.text || '');
-            addRow({
-              A: { v: '', s: 9 },
-              B: { v: subText, s: 11 },
-              C: { v: '', s: 9 }, D: { v: '', s: 9 },
-              E: { v: '', s: 12 }, F: { v: '', s: 13 },
-              G: { v: sl.remark || '', s: 14 }
-            }, 18);
-          });
-        }
-      });
-
-      if (sec.showSubtotal) {
+      } else if (r.kind === 'spec_line') {
+        const indent = r.indentLevel >= 2 ? '      ' : '   ';
+        addRow({
+          A: { v: '', s: 9 },
+          B: { v: `${indent}${r.text}`, s: 11 },
+          C: { v: '', s: 9 }, D: { v: '', s: 9 },
+          E: { v: '', s: 12 }, F: { v: '', s: 13 }, G: { v: '', s: 14 }
+        }, 18);
+      } else if (r.kind === 'sub_line') {
+        const indent = r.indentLevel >= 2 ? '      ' : '   ';
+        const subText = r.rightText ? `${indent}${r.text}   (${r.rightText})` : `${indent}${r.text}`;
+        addRow({
+          A: { v: '', s: 9 },
+          B: { v: subText, s: 11 },
+          C: { v: '', s: 9 }, D: { v: '', s: 9 },
+          E: { v: '', s: 12 }, F: { v: '', s: 13 },
+          G: { v: r.remark || '', s: 14 }
+        }, 18);
+      } else if (r.kind === 'subtotal') {
         const rSub = addRow({
-          A: { v: sec.subtotalLabel || 'TOTAL', s: 15 },
+          A: { v: r.label || 'TOTAL', s: 15 },
           B: { v: '', s: 15 }, C: { v: '', s: 15 }, D: { v: '', s: 15 }, E: { v: '', s: 15 },
-          F: { v: Number(sec.subtotal || 0), t: 'n', s: 16 },
+          F: { v: Number(r.amount || 0), t: 'n', s: 16 },
           G: { v: '', s: 15 }
         }, 20);
         merges.push(`A${rSub}:E${rSub}`);
@@ -4918,13 +6350,15 @@ xmlns="http://www.w3.org/TR/REC-html40">
     });
 
     // Summary Rows
-    const rPre = addRow({
-      A: { v: t.total_label_before_tax || 'Total (A) + (B) - Before TAX', s: 15 },
-      B: { v: '', s: 15 }, C: { v: '', s: 15 }, D: { v: '', s: 15 }, E: { v: '', s: 15 },
-      F: { v: Number(q.subtotal_before_tax || 0), t: 'n', s: 16 },
-      G: { v: '', s: 15 }
-    }, 20);
-    merges.push(`A${rPre}:E${rPre}`);
+    if (renderedXlsx.showBeforeTaxInSummary) {
+      const rPre = addRow({
+        A: { v: t.total_label_before_tax || 'Total (A) + (B) - Before TAX', s: 15 },
+        B: { v: '', s: 15 }, C: { v: '', s: 15 }, D: { v: '', s: 15 }, E: { v: '', s: 15 },
+        F: { v: Number(q.subtotal_before_tax || 0), t: 'n', s: 16 },
+        G: { v: '', s: 15 }
+      }, 20);
+      merges.push(`A${rPre}:E${rPre}`);
+    }
 
     const rVat = addRow({
       A: { v: `TAX VAT   ${Number(q.vat_percent || 0)}%`, s: 15 },
@@ -6633,6 +8067,14 @@ xmlns="http://www.w3.org/TR/REC-html40">
     setF1FlowSearch,
     setF1Project,
     selectRecommendedModel,
+    toggleF1Component,
+    toggleF1DefaultInst,
+    resetF1Components,
+    setF1SpecLevel,
+    setF1MgmtPercent,
+    setF1VatPercent,
+    setF1NoteInstallTrans,
+    applyF1NotePreset,
     startDetailedFromF1,
     updateQField,
     onSelectApproverUser,
@@ -6640,6 +8082,24 @@ xmlns="http://www.w3.org/TR/REC-html40">
     updatePaymentLines,
     updateBankCombined,
     applyTermsPreset,
+    toggleAutoCalcMgmt,
+    setQuickAddTargetSection,
+    setQuickTowerProdLine,
+    setQuickTowerModelCode,
+    setQuickTowerInsertMode,
+    insertTowerIntoSection,
+    addNewAreaWithTower,
+    setQuotePriceDisplayMode,
+    setQuoteSpecDetailLevel,
+    setCustomGroupNameInput,
+    toggleGroupSelectItem,
+    mergeSelectedItemsIntoGroup,
+    ungroupSelectedItems,
+    clearItemMergeGroup,
+    toggleItemIncluded,
+    toggleBundleComponent,
+    applyNote5InstallPreset,
+    syncNote5FromServices,
     handleMgmtFeeModeChange,
     onMgmtFeePercentInput,
     onMgmtFeePercentBlur,

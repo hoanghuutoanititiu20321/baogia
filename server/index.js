@@ -141,11 +141,21 @@ function formatQuoteRow(row, includeCost) {
   if (!includeCost) {
     sections = sections.map(sec => ({
       ...sec,
-      items: (sec.items || []).map(it => ({
-        ...it,
-        cost_price: null,
-        breakdown: (it.breakdown || []).map(b => ({ ...b, cost: null }))
-      }))
+      items: (sec.items || []).map(it => {
+        let maskedCompBreakdown = it.component_breakdown;
+        if (maskedCompBreakdown && typeof maskedCompBreakdown === 'object') {
+          maskedCompBreakdown = {};
+          Object.keys(it.component_breakdown).forEach(k => {
+            maskedCompBreakdown[k] = { ...it.component_breakdown[k], cost: null };
+          });
+        }
+        return {
+          ...it,
+          cost_price: null,
+          breakdown: (it.breakdown || []).map(b => ({ ...b, cost: null })),
+          ...(maskedCompBreakdown ? { component_breakdown: maskedCompBreakdown } : {})
+        };
+      })
     }));
   }
   const mgmtFeePct = (terms && terms.mgmt_fee_percent !== undefined)
