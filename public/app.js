@@ -1659,6 +1659,55 @@ const App = (() => {
     return { hasShip, hasInstall };
   }
 
+  function resolveQuotePeople(q) {
+    if (!q) {
+      return {
+        creatorUsername: '',
+        creatorName: '—',
+        creatorHandle: '',
+        picName: '—',
+        picPhone: '',
+        approverName: '—',
+        approverPhone: '',
+        approvedBy: '',
+        approvedAt: '',
+        isDiffActualApprover: false
+      };
+    }
+    const rawCreatorUser = String(q.created_by || (!q.id ? (state.currentUser?.username || '') : '')).trim();
+    const matchedCreator = rawCreatorUser
+      ? (state.users || []).find(u => String(u.username || '').toLowerCase() === rawCreatorUser.toLowerCase())
+      : null;
+    const creatorName = String(q.created_by_name || matchedCreator?.full_name || (rawCreatorUser ? `@${rawCreatorUser}` : '—')).trim() || '—';
+    const creatorHandle = rawCreatorUser ? `@${rawCreatorUser}` : '';
+
+    const picName = String(q.pic_name || '').trim() || '—';
+    const picPhone = String(q.pic_phone || '').trim();
+
+    const approverName = String(q.approver_name || '').trim() || '—';
+    const approverPhone = String(q.approver_phone || '').trim();
+    const approvedBy = String(q.approved_by || '').trim();
+    const approvedAt = String(q.approved_at || '').trim();
+    const isDiffActualApprover = Boolean(
+      approvedBy &&
+      approverName !== '—' &&
+      approvedBy.toLowerCase() !== approverName.toLowerCase()
+    );
+
+    return {
+      creatorUsername: rawCreatorUser,
+      creatorName,
+      creatorHandle,
+      picName,
+      picPhone,
+      approverName,
+      approverPhone,
+      approvedBy,
+      approvedAt,
+      isDiffActualApprover
+    };
+  }
+
   function renderFlow2() {
     const container = document.getElementById('view-flow2');
     if (!container) return;
@@ -1736,12 +1785,25 @@ const App = (() => {
               <span class="status-pill status-${esc(q.status)}">${statusLabels[q.status] || q.status}</span>
               ${q.id ? `<span style="font-size:12px;color:var(--muted)">(ID: #${q.id} · Rev ${String(q.revision || 1).padStart(2, '0')})</span>` : '<span class="tag-optional">Báo giá mới (Chưa lưu)</span>'}
             </div>
-            <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">
-              Khách hàng: <strong>${esc(q.customer_name)}</strong> · Dự án: <strong>${esc(q.project_name || '—')}</strong>
-              · Người tạo: <strong>@${esc(q.created_by || state.currentUser?.username || '—')}</strong>
-              ${q.updated_at ? ` · Cập nhật gần nhất: <strong>${esc(formatDateTimeVN(q.updated_at))}</strong>` : ''}
-              ${(q.status === 'approved' || q.status === 'sent') && (q.approved_by || q.approver_name) ? ` · Duyệt bởi: <strong style="color:var(--green)">${esc(q.approved_by || q.approver_name)}</strong>` : ''}
-            </div>
+            ${(() => {
+        const ppl = resolveQuotePeople(q);
+        return `
+              <div style="font-size:12.5px; color:var(--muted); margin-top:4px; line-height:1.5;">
+                <div>
+                  Khách hàng: <strong>${esc(q.customer_name)}</strong> · Dự án: <strong>${esc(q.project_name || '—')}</strong>
+                  ${q.updated_at ? ` · Cập nhật: <strong>${esc(formatDateTimeVN(q.updated_at))}</strong>` : ''}
+                </div>
+                <div style="margin-top:2px;">
+                  Người tạo: <strong style="color:#334155">${esc(ppl.creatorName)}</strong>${ppl.creatorHandle && !ppl.creatorName.startsWith('@') ? ` <span style="font-size:11.5px;">(${esc(ppl.creatorHandle)})</span>` : ''}
+                  · Người đảm trách (PIC): <strong style="color:var(--navy)">${esc(ppl.picName)}</strong>
+                  · Người duyệt: <strong>${esc(ppl.approverName)}</strong>
+                  ${(q.status === 'approved' || q.status === 'sent')
+                    ? ` <span style="color:var(--green);font-weight:700;">(✓ Đã duyệt${ppl.approvedBy ? ` bởi ${esc(ppl.approvedBy)}` : ''}${ppl.approvedAt ? ` lúc ${esc(formatDateTimeVN(ppl.approvedAt))}` : ''})</span>`
+                    : ''}
+                </div>
+              </div>
+            `;
+      })()}
           </div>
 
           <div class="row">
@@ -1922,14 +1984,46 @@ const App = (() => {
                   </label>
                 `;
       })()}
-              <label class="field">
-                担当者 Người đảm trách (Sale/PIC)
-                <input type="text" value="${esc(q.pic_name)}" oninput="App.updateQField('pic_name', this.value)">
-              </label>
-              <label class="field">
-                SĐT Người đảm trách
-                <input type="text" value="${esc(q.pic_phone)}" oninput="App.updateQField('pic_phone', this.value)">
-              </label>
+              ${(() => {
+        const activeUsers = (state.users || []).filter(u => Number(u.is_active ?? 1) !== 0);
+        const curPic = String(q.pic_name || '').trim().toLowerCase();
+        const matchedPic = !q._customPic && activeUsers.find(
+          u => String(u.full_name || '').trim().toLowerCase() === curPic
+        );
+        const showCustomPic = Boolean(q._customPic || (!matchedPic && curPic));
+        const ppl = resolveQuotePeople(q);
+
+        return `
+                  <label class="field">
+                    担当者 Người đảm trách (Sale/PIC trên báo giá)
+                    <select id="picUserSelect" onchange="App.onSelectPicUser(this.value)">
+                      ${activeUsers.map(u => {
+          const rLabel = u.role === 'admin' ? 'Admin' : u.role === 'manager' ? 'Quản lý KD' : 'Sale';
+          return `
+                          <option value="${u.id}" ${matchedPic && matchedPic.id === u.id ? 'selected' : ''}>
+                            ${esc(u.full_name)} (${rLabel})${u.phone ? ` · ${esc(u.phone)}` : ''}
+                          </option>
+                        `;
+        }).join('')}
+                      <option value="__custom__" ${showCustomPic ? 'selected' : ''}>✍️ Tùy chỉnh tên người đảm trách khác...</option>
+                    </select>
+                    <input type="text" id="picNameCustomInput"
+                           style="margin-top:4px; display:${showCustomPic ? 'block' : 'none'};"
+                           value="${esc(q.pic_name || '')}"
+                           placeholder="Nhập họ tên người đảm trách..."
+                           oninput="App.updateQField('pic_name', this.value)">
+                  </label>
+                  <label class="field">
+                    SĐT Người đảm trách
+                    <input type="text" id="picPhoneInput" value="${esc(q.pic_phone || '')}"
+                           oninput="App.updateQField('pic_phone', this.value)">
+                  </label>
+                  <div style="grid-column: 1 / -1; font-size:11.5px; color:#475569; background:#ffffff; border:1px dashed #cbd5e1; border-radius:6px; padding:5px 9px;">
+                    👤 <strong>Người tạo hồ sơ (Hệ thống ghi nhận):</strong> ${esc(ppl.creatorName)}${ppl.creatorHandle && !ppl.creatorName.startsWith('@') ? ` (${esc(ppl.creatorHandle)})` : ''}
+                    <span style="color:var(--muted);">— độc lập với Người đảm trách (PIC) và Người duyệt trên báo giá.</span>
+                  </div>
+                `;
+      })()}
               <label class="field">
                 Con dấu & Chữ ký trên bản in
                 <select onchange="App.updateQField('stamp_type', this.value)">
@@ -2648,6 +2742,39 @@ const App = (() => {
       phoneInput.value = q.approver_phone;
     }
     toast(`Đã chọn Người duyệt: ${q.approver_name}${q.approver_phone ? ` (SĐT: ${q.approver_phone})` : ''}`);
+  }
+
+  function onSelectPicUser(val) {
+    const q = state.activeQuote;
+    if (!q) return;
+
+    const customInput = document.getElementById('picNameCustomInput');
+    const phoneInput = document.getElementById('picPhoneInput');
+
+    if (val === '__custom__') {
+      q._customPic = true;
+      if (customInput) {
+        customInput.style.display = 'block';
+        customInput.focus();
+      }
+      return;
+    }
+
+    const user = (state.users || []).find(u => String(u.id) === String(val));
+    if (!user) return;
+
+    q._customPic = false;
+    q.pic_name = user.full_name || '';
+    q.pic_phone = user.phone || '';
+
+    if (customInput) {
+      customInput.value = q.pic_name;
+      customInput.style.display = 'none';
+    }
+    if (phoneInput) {
+      phoneInput.value = q.pic_phone;
+    }
+    toast(`Đã chọn Người đảm trách (PIC): ${q.pic_name}${q.pic_phone ? ` (SĐT: ${q.pic_phone})` : ''}`);
   }
 
   function updateTermField(field, value) {
@@ -3907,15 +4034,19 @@ const App = (() => {
     }
     recalcActiveQuoteTotals();
     const q = state.activeQuote;
+    const ppl = resolveQuotePeople(q);
     openConfirmModal({
       title: '📤 Xác Nhận Lưu & Gửi Duyệt Báo Giá',
       okText: '📤 Xác nhận Gửi duyệt',
       isDanger: false,
       messageHtml: `
         Bạn có chắc chắn muốn <strong>Lưu và Gửi duyệt</strong> hồ sơ báo giá này lên Quản lý / Người duyệt không?
-        <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;">
+        <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;line-height:1.5;">
           <div>• Số báo giá: <strong style="color:var(--navy)">${esc(q.quote_number)}</strong></div>
           <div>• Khách hàng: <strong>${esc(q.customer_name)}</strong></div>
+          <div>• Người tạo: <strong>${esc(ppl.creatorName)}</strong>${ppl.creatorHandle && !ppl.creatorName.startsWith('@') ? ` (${esc(ppl.creatorHandle)})` : ''}</div>
+          <div>• Người đảm trách (PIC): <strong style="color:var(--navy)">${esc(ppl.picName)}</strong></div>
+          <div>• Người duyệt trên báo giá: <strong>${esc(ppl.approverName)}</strong></div>
           <div>• Tổng cộng sau thuế: <strong style="color:var(--green)">${fmtVnd(q.total_after_tax)} VND</strong></div>
         </div>
       `,
@@ -3978,6 +4109,7 @@ const App = (() => {
     const qNum = target ? target.quote_number : `#${id}`;
     const cName = target ? target.customer_name : '';
     const totalStr = target ? fmtVnd(target.total_after_tax) + ' VND' : '';
+    const ppl = resolveQuotePeople(target);
 
     const isApprove = status === 'approved';
     const isSent = status === 'sent';
@@ -4003,9 +4135,12 @@ const App = (() => {
       isDanger: false,
       messageHtml: `
         Bạn có chắc chắn muốn <strong>${actionLabel}</strong> đối với hồ sơ báo giá này không?
-        <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;">
+        <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;line-height:1.5;">
           <div>• Số báo giá: <strong style="color:var(--navy)">${esc(qNum)}</strong></div>
           <div>• Khách hàng: <strong>${esc(cName)}</strong></div>
+          <div>• Người tạo: <strong>${esc(ppl.creatorName)}</strong>${ppl.creatorHandle && !ppl.creatorName.startsWith('@') ? ` (${esc(ppl.creatorHandle)})` : ''}</div>
+          <div>• Người đảm trách (PIC): <strong style="color:var(--navy)">${esc(ppl.picName)}</strong></div>
+          <div>• Người duyệt: <strong>${esc(ppl.approverName)}</strong></div>
           <div>• Tổng cộng sau thuế: <strong style="color:var(--green)">${esc(totalStr)}</strong></div>
         </div>
       `,
@@ -6574,11 +6709,18 @@ xmlns="http://www.w3.org/TR/REC-html40">
       if (state.quoteStatusFilter !== 'ALL' && q.status !== state.quoteStatusFilter) return false;
       if (state.quoteSearch) {
         const s = state.quoteSearch.toLowerCase();
+        const ppl = resolveQuotePeople(q);
         const match =
           (q.quote_number || '').toLowerCase().includes(s) ||
           (q.customer_name || '').toLowerCase().includes(s) ||
           (q.project_name || '').toLowerCase().includes(s) ||
-          (q.pic_name || '').toLowerCase().includes(s);
+          (ppl.creatorName || '').toLowerCase().includes(s) ||
+          (ppl.creatorUsername || '').toLowerCase().includes(s) ||
+          (ppl.creatorHandle || '').toLowerCase().includes(s) ||
+          (ppl.picName || '').toLowerCase().includes(s) ||
+          (ppl.picPhone || '').toLowerCase().includes(s) ||
+          (ppl.approverName || '').toLowerCase().includes(s) ||
+          (ppl.approvedBy || '').toLowerCase().includes(s);
         if (!match) return false;
       }
       return true;
@@ -6588,20 +6730,21 @@ xmlns="http://www.w3.org/TR/REC-html40">
       <div class="card">
         <div class="card-header">
           <div>
-            <h2 class="card-title">Quản Lý Báo Giá</h2>
+            <h2 class="card-title">Quản Lý Hồ Sơ & Phê Duyệt Báo Giá</h2>
             <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted)">
-              ${state.permissions.canViewAllQuotes ? 'Hiển thị toàn bộ báo giá trong hệ thống.' : 'Chế độ giới hạn: Chỉ hiển thị các báo giá do bạn tạo hoặc đứng tên phụ trách.'}
+              ${state.permissions.canViewAllQuotes ? 'Hiển thị toàn bộ báo giá trong hệ thống' : 'Chế độ giới hạn: Chỉ hiển thị các báo giá do bạn tạo hoặc đứng tên phụ trách.'}
             </p>
           </div>
           <div class="col">
-            <input type="text" id="quoteSearchInput" placeholder="Tìm số BG, khách hàng, dự án..." value="${esc(state.quoteSearch)}"
-                   oninput="App.setQuoteFilter('search', this.value)" style="flex:1 1 200px;">
+            <input type="text" id="quoteSearchInput" placeholder="Tìm số BG, KH, dự án, người tạo, đảm trách, người duyệt..." value="${esc(state.quoteSearch)}"
+                   oninput="App.setQuoteFilter('search', this.value)" style="flex:1 1 250px;">
             <select onchange="App.setQuoteFilter('status', this.value)">
               <option value="ALL" ${state.quoteStatusFilter === 'ALL' ? 'selected' : ''}>Tất cả trạng thái (${state.quotations.length})</option>
               <option value="draft" ${state.quoteStatusFilter === 'draft' ? 'selected' : ''}>Bản nháp</option>
               <option value="pending_approval" ${state.quoteStatusFilter === 'pending_approval' ? 'selected' : ''}>Chờ duyệt</option>
               <option value="approved" ${state.quoteStatusFilter === 'approved' ? 'selected' : ''}>Đã duyệt</option>
               <option value="sent" ${state.quoteStatusFilter === 'sent' ? 'selected' : ''}>Đã gửi KH</option>
+              <option value="rejected" ${state.quoteStatusFilter === 'rejected' ? 'selected' : ''}>Cần chỉnh sửa</option>
             </select>
             <button class="btn btn-primary" onclick="App.showTab('flow1')">
               + Lập Báo Giá Mới Từ Cấu Hình Cơ Bản
@@ -6614,40 +6757,64 @@ xmlns="http://www.w3.org/TR/REC-html40">
           <table class="data-table">
             <thead>
               <tr>
-                <th style="width:105px; min-width:95px;">Số Báo Giá</th>
-                <th style="width:88px; min-width:82px;">Ngày BG</th>
+                <th style="width:96px; min-width:90px;">Số Báo Giá</th>
+                <th style="width:82px; min-width:78px;">Ngày BG</th>
                 <th style="min-width:210px;">Khách Hàng & Dự Án</th>
-                <th style="width:165px; min-width:145px;">Người Tạo & Đảm Trách</th>
-                <th class="c" style="width:86px;">Cập Nhật</th>
-                ${showCost ? '<th class="r cost-col" style="width:125px;">Tổng Giá Cost</th>' : ''}
-                <th class="r" style="width:125px;">Tổng Trước Thuế</th>
-                <th class="c" style="width:52px;">VAT</th>
-                <th class="r" style="width:130px;">Tổng Sau Thuế</th>
-                <th class="c" style="width:92px;">Trạng Thái</th>
-                <th class="c" style="width:142px;">Thao Tác</th>
+                <th style="width:168px; min-width:155px;" title="Dòng 1: Người tạo hồ sơ · Dòng 2: Người đảm trách (PIC) · Dòng 3: Người duyệt">Nhân Sự</th>
+                <th class="c" style="width:80px;">Cập Nhật</th>
+                ${showCost ? '<th class="r cost-col" style="width:116px;">Tổng Giá Cost</th>' : ''}
+                <th class="r" style="width:118px;">Tổng Trước Thuế</th>
+                <th class="c" style="width:46px;">VAT</th>
+                <th class="r" style="width:122px;">Tổng Sau Thuế</th>
+                <th class="c" style="width:90px;">Trạng Thái</th>
+                <th class="c" style="width:136px;">Thao Tác</th>
               </tr>
             </thead>
             <tbody>
-              ${filtered.map(q => {
+              ${filtered.length > 0 ? filtered.map(q => {
       const canEditRow = canUserEditQuote(q);
       const canMarkSentRow = canUserMarkSent(q);
+      const ppl = resolveQuotePeople(q);
       const viewTooltip = (q.status === 'approved' || q.status === 'sent')
         ? `Báo giá ${q.status === 'sent' ? 'Đã gửi KH' : 'Đã duyệt'} (Khóa chỉnh sửa - Nhấn để xem chi tiết)`
-        : `Báo giá do @${esc(q.created_by)} tạo (Chế độ Chỉ xem)`;
+        : `Báo giá do ${ppl.creatorName} (${ppl.creatorHandle}) tạo (Chế độ Chỉ xem)`;
+
+      const displayApproverMain = (ppl.approverName && ppl.approverName !== '—')
+        ? ppl.approverName
+        : (ppl.approvedBy || '—');
+
+      const dtStr = ppl.approvedAt ? formatDateTimeVN(ppl.approvedAt) : '';
+      const approverTitle = (q.status === 'approved' || q.status === 'sent')
+        ? `Người duyệt: ${displayApproverMain}${ppl.isDiffActualApprover ? ` | Thực duyệt: ${ppl.approvedBy}` : ''}${dtStr ? ` (${dtStr})` : ''}`
+        : `Người duyệt: ${displayApproverMain}`;
+
       return `
                 <tr>
-                  <td>
+                  <td style="white-space:nowrap;">
                     <strong style="color:var(--navy)">${esc(q.quote_number)}</strong>
                     <div style="font-size:11px;color:var(--muted)">Rev ${String(q.revision || 1).padStart(2, '0')}</div>
                   </td>
-                  <td>${esc(formatDateDMY(q.quote_date))}</td>
+                  <td style="white-space:nowrap;">${esc(formatDateDMY(q.quote_date))}</td>
                   <td>
                     <strong>${esc(q.customer_name)}</strong>
                     <div style="font-size:12px;color:var(--muted)">${esc(q.project_name || q.install_location || '—')}</div>
                   </td>
-                  <td>
-                    <div><strong>${esc(q.pic_name)}</strong></div>
-                    ${(q.status === 'approved' || q.status === 'sent') ? `<div style="font-size:11px;color:var(--green);font-weight:600;">✓ Duyệt: ${esc(q.approved_by || q.approver_name)}</div>` : ''}
+                  <td class="q-people-merged">
+                    <div class="q-p-line" title="Người tạo hồ sơ: ${esc(ppl.creatorName)}${ppl.creatorHandle ? ` (${esc(ppl.creatorHandle)})` : ''}">
+                      <span class="q-p-lbl creator">Tạo:</span>
+                      <span class="q-p-val">${esc(ppl.creatorName)}</span>
+                    </div>
+                    <div class="q-p-line" title="担当者 Đảm trách (PIC): ${esc(ppl.picName)}${ppl.picPhone ? ` · ${esc(ppl.picPhone)}` : ''}">
+                      <span class="q-p-lbl creator">PIC:</span>
+                      <span class="q-p-val pic">${esc(ppl.picName)}</span>
+                    </div>
+                    <div class="q-p-line" title="${esc(approverTitle)}">
+                      <span class="q-p-lbl creator">Duyệt:</span>
+                      <span class="q-p-val">${esc(displayApproverMain)}</span>
+                      ${(q.status === 'approved' || q.status === 'sent')
+                        ? `<span class="q-p-tick" title="${esc(approverTitle)}">✓</span>`
+                        : ''}
+                    </div>
                   </td>
                   <td class="c" style="font-size:11.5px;line-height:1.3;padding:6px 6px;">
                     ${(() => {
@@ -6694,7 +6861,13 @@ xmlns="http://www.w3.org/TR/REC-html40">
                   </td>
                 </tr>
               `;
-    }).join('')}
+    }).join('') : `
+                <tr>
+                  <td colspan="${showCost ? 11 : 10}" class="c" style="padding:18px;color:var(--muted);">
+                    Không tìm thấy hồ sơ báo giá nào phù hợp với bộ lọc hiện tại.
+                  </td>
+                </tr>
+              `}
             </tbody>
           </table>
         </div>
@@ -6735,7 +6908,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
     const target = state.quotations.find(q => q.id === id);
     const qNum = target ? target.quote_number : `#${id}`;
     const cName = target ? target.customer_name : '';
-    const creator = target ? target.created_by : '';
+    const ppl = resolveQuotePeople(target);
 
     openConfirmModal({
       title: '⚠️ Xác Nhận Xóa Hồ Sơ Báo Giá',
@@ -6743,10 +6916,12 @@ xmlns="http://www.w3.org/TR/REC-html40">
       isDanger: true,
       messageHtml: `
         Bạn có chắc chắn muốn <strong style="color:var(--red)">XÓA VĨNH VIỄN</strong> hồ sơ báo giá này khỏi hệ thống?
-        <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;margin:10px 0;font-size:13px;">
+        <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;margin:10px 0;font-size:13px;line-height:1.5;">
           <div>• Số báo giá: <strong style="color:var(--red)">${esc(qNum)}</strong></div>
           <div>• Khách hàng: <strong>${esc(cName)}</strong></div>
-          <div>• Người tạo: <strong>@${esc(creator)}</strong></div>
+          <div>• Người tạo: <strong>${esc(ppl.creatorName)}</strong>${ppl.creatorHandle && !ppl.creatorName.startsWith('@') ? ` (${esc(ppl.creatorHandle)})` : ''}</div>
+          <div>• Người đảm trách (PIC): <strong>${esc(ppl.picName)}</strong></div>
+          <div>• Người duyệt: <strong>${esc(ppl.approverName)}</strong></div>
         </div>
         <span style="color:var(--red);font-size:12.5px;font-weight:700;">⚠️ Lưu ý: Hành động này không thể hoàn tác sau khi xóa!</span>
       `,
@@ -8078,6 +8253,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
     startDetailedFromF1,
     updateQField,
     onSelectApproverUser,
+    onSelectPicUser,
     updateTermField,
     updatePaymentLines,
     updateBankCombined,

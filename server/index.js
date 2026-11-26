@@ -161,8 +161,16 @@ function formatQuoteRow(row, includeCost) {
   const mgmtFeePct = (terms && terms.mgmt_fee_percent !== undefined)
     ? Number(terms.mgmt_fee_percent)
     : (row.mgmt_fee_percent !== undefined ? Number(row.mgmt_fee_percent) : 5);
+  let createdByName = '';
+  if (row.created_by) {
+    try {
+      const creatorRow = db.prepare('SELECT full_name FROM users WHERE username = ?').get(row.created_by);
+      if (creatorRow && creatorRow.full_name) createdByName = creatorRow.full_name;
+    } catch {}
+  }
   return {
     ...row,
+    created_by_name: createdByName,
     mgmt_fee_percent: mgmtFeePct,
     subtotal_cost: includeCost ? row.subtotal_cost : null,
     sections,
