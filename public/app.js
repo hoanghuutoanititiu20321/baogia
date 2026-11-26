@@ -842,7 +842,7 @@ const App = (() => {
           </label>
 
           <label class="field">
-            Tra nhanh theo Lưu lượng cần xử lý (m³/min)
+            Lưu lượng cần xử lý (m³/min)
             <input type="number" id="f1FlowSearchInput" placeholder="VD: 55 hoặc 130..." value="${esc(state.f1.flowSearch)}" oninput="App.setF1FlowSearch(this.value)">
           </label>
 
@@ -857,12 +857,12 @@ const App = (() => {
         ${cur ? `
           <div class="cfg-toolbar-bar">
             <div class="cfg-pill-group">
-              <span class="cfg-pill-label">Thông số hiển thị:</span>
+              <span class="cfg-pill-label">Thông số:</span>
               <button type="button" class="btn btn-sm ${specLevel === 'basic' ? 'btn-navy' : ''}" onclick="App.setF1SpecLevel('basic')" title="Ẩn thông số điện chi tiết (kW, 3 pha, 380V, 50Hz, 4P, IE3)">
-                Cơ bản (Gọn)
+                Gọn
               </button>
               <button type="button" class="btn btn-sm ${specLevel === 'detailed' ? 'btn-navy' : ''}" onclick="App.setF1SpecLevel('detailed')" title="Hiển thị đầy đủ thông số kỹ thuật gốc">
-                Chi tiết (Đầy đủ)
+                Đầy đủ
               </button>
             </div>
 
@@ -919,7 +919,7 @@ const App = (() => {
                 <tr>
                   <th class="c" style="width:46px;" title="Tích chọn để đưa vào báo giá; bỏ tích để trừ đúng giá thành phần từ Data báo giá.xlsx">Chọn</th>
                   <th style="width: 23%; min-width: 170px;">Hạng mục cấu hình</th>
-                  <th style="min-width: 240px;">Thông số kỹ thuật (${specLevel === 'basic' ? 'Bản gọn gửi khách' : 'Chi tiết đầy đủ'})</th>
+                  <th style="min-width: 240px;">Thông số kỹ thuật (${specLevel === 'basic' ? 'Gọn' : 'Đầy đủ'})</th>
                   ${showCost ? '<th class="r cost-col" style="width: 15%;">Giá Cost nội bộ (VND)</th>' : ''}
                   <th class="r" style="width: 17%;">Giá báo cơ bản (VND)</th>
                 </tr>
@@ -942,7 +942,7 @@ const App = (() => {
                   </tr>
                 `).join('')}
                 <tr class="sub-row">
-                  <td colspan="3">Cộng thiết bị sản xuất đã chọn (${f1Calc.selectedCount}/5 hạng mục — đúng giá thành phần từ Data báo giá.xlsx)</td>
+                  <td colspan="3">Thiết bị sản xuất đã chọn (${f1Calc.selectedCount}/5 hạng mục)</td>
                   ${showCost ? `<td class="r cost-col">${fmtVnd(f1Calc.prodCost)}</td>` : ''}
                   <td class="r">${fmtVnd(f1Calc.prodBase)}</td>
                 </tr>
@@ -1817,7 +1817,7 @@ const App = (() => {
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">1. Thông Tin Hành Chính, Khách Hàng & Dự Án</h3>
-          <span style="font-size:12px;color:var(--muted)">Hiển thị trực tiếp trên phần đầu biểu mẫu báo giá song ngữ Nhật – Việt</span>
+          <span style="font-size:12px;color:var(--muted)"></span>
         </div>
 
         <div class="grid-4" style="margin-bottom: 12px;">
@@ -6889,7 +6889,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
       <div class="card">
         <div class="row-between">
           <div>
-            <h2 class="card-title">Quản Lý Sản Phẩm, Thiết Bị & Dịch Vụ (Đồng Bộ File Data báo giá.xlsx)</h2>
+            <h2 class="card-title">Quản Lý Sản Phẩm, Thiết Bị & Dịch Vụ</h2>
             <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted)">
               ${state.models.length} cấu hình Sản phẩm Hệ tháp (Giá Cost & Giá Cơ Bản) và ${state.equipment.length} thiết bị đo, quạt, bơm, phụ kiện, dịch vụ.
             </p>
