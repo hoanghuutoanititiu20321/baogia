@@ -1897,25 +1897,6 @@ const App = (() => {
         </div>
       </div>
 
-      <div class="card">
-        <div class="row-between">
-          <div>
-            <strong style="color:var(--navy)">Khởi tạo nhanh mẫu bố cục mới:</strong>
-            <span style="font-size:12.5px;color:var(--muted);margin-left:6px;">Hỗ trợ đầy đủ 3 định dạng báo giá thực tế của Kyowa Kako Việt Nam</span>
-          </div>
-          <div class="row">
-            <button class="btn btn-sm" onclick="App.showTab('flow1')">
-              + Mẫu 1: Trọn bộ Hệ tháp từ Cấu hình cơ bản (Mẫu Taikisha)
-            </button>
-            <button class="btn btn-sm" onclick="App.createBlankQuoteTemplate('standalone')">
-              + Mẫu 2: Báo giá Thiết bị lẻ Quạt / Bơm (Mẫu SMC)
-            </button>
-            <button class="btn btn-sm" onclick="App.createBlankQuoteTemplate('grouped_areas')">
-              + Mẫu 3: Chia theo Khu vực / Nhiều Tháp I, II, III, IV (Mẫu Mektec)
-            </button>
-          </div>
-        </div>
-      </div>
 
       <div class="card">
         <div class="card-header">
@@ -2036,7 +2017,7 @@ const App = (() => {
 
         return `
                   <label class="field">
-                    担当者 Người đảm trách (Sale/PIC trên báo giá)
+                    担当者 Người đảm trách (PIC)
                     <select id="picUserSelect" onchange="App.onSelectPicUser(this.value)">
                       ${activeUsers.map(u => {
           const rLabel = u.role === 'admin' ? 'Admin' : u.role === 'manager' ? 'Quản lý KD' : 'Sale';
@@ -2062,7 +2043,7 @@ const App = (() => {
                 `;
       })()}
               <label class="field">
-                Con dấu & Chữ ký trên bản in
+                Con dấu & Chữ ký
                 <select onchange="App.updateQField('stamp_type', this.value)">
                   <option value="longan" ${q.stamp_type === 'longan' ? 'selected' : ''}>Mộc đỏ Long An + Chữ ký Nguyễn Bảo Trường</option>
                   <option value="tayninh" ${q.stamp_type === 'tayninh' ? 'selected' : ''}>Mộc đỏ Tây Ninh + Chữ ký Nguyễn Bảo Trường</option>
