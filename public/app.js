@@ -2145,12 +2145,7 @@ const App = (() => {
                   <option value="separate_to_b" ${q.mgmt_fee_mode !== 'included_in_a' ? 'selected' : ''}>1. Tách sang mục B</option>
                   <option value="included_in_a" ${q.mgmt_fee_mode === 'included_in_a' ? 'selected' : ''}>2. Gộp chung trong mục Sản xuất A</option>
                 </select>
-                <div style="font-size:11.5px; color:#475569; margin-top:6px; line-height:1.4;">
-                  ${q.mgmt_fee_mode === 'included_in_a'
-                    ? `📌 Đang gộp dòng phí (${mgmtPct}% = ${fmtVnd(mgmtInfo.base)} đ) trực tiếp trong <strong>Mục A</strong> (không tách ở Mục B) · Tổng sau thuế giữ nguyên.`
-                    : `📌 Đang đặt dòng phí (${mgmtPct}% = ${fmtVnd(mgmtInfo.base)} đ) tại <strong>Mục B. Khác</strong> (Mục A chỉ gồm thiết bị) · Tổng sau thuế giữ nguyên.`
-                  }
-                </div>
+               
               </div>
             `;
       })()}
