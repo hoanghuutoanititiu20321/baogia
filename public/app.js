@@ -42,6 +42,11 @@ const App = (() => {
     quickTowerProdLine: 'FSD 0.5',
     quickTowerModelCode: '55',
     quickTowerInsertMode: 'itemized',
+    quickAddSelectedIds: {
+      quickAddInstSelect: '',
+      quickAddFanPumpSelect: '',
+      quickAddServiceSelect: ''
+    },
     selectedGroupItemKeys: [],
     customGroupNameInput: '',
 
@@ -2154,9 +2159,9 @@ const App = (() => {
               Thiết bị đi kèm mặc định được kiểm tra riêng theo từng khu vực/hệ (Mã 01 & 03):
             </p>
             <div class="quick-add-row">
-              <select id="quickAddInstSelect">
+              <select id="quickAddInstSelect" onchange="App.setQuickAddSelection('quickAddInstSelect', this.value)">
                 ${instrumentsAndOptions.map(eq => `
-                  <option value="${eq.id}">
+                  <option value="${eq.id}" ${String(eq.id) === String(state.quickAddSelectedIds?.quickAddInstSelect || '') ? 'selected' : ''}>
                     ${eq.is_default_included ? '[MẶC ĐỊNH THEO THÁP] ' : '[+ OPTION] '}
                     ${esc(eq.name_vi)} — ${eq.base_price ? fmtVnd(eq.base_price) + ' đ' : 'Chưa có giá'}
                   </option>
@@ -2171,9 +2176,9 @@ const App = (() => {
           <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
             <strong style="color:var(--navy); display:block; margin-bottom:6px;">Thêm nhanh Quạt / Bơm lẻ & Dịch vụ vào Khu vực [${targetSecIdx + 1}]</strong>
             <div class="quick-add-row" style="margin-bottom:6px;">
-              <select id="quickAddFanPumpSelect">
+              <select id="quickAddFanPumpSelect" onchange="App.setQuickAddSelection('quickAddFanPumpSelect', this.value)">
                 ${standaloneFansPumps.map(eq => `
-                  <option value="${eq.id}">[${eq.category.toUpperCase()}] ${esc(eq.name_vi)} — ${fmtVnd(eq.base_price)} đ</option>
+                  <option value="${eq.id}" ${String(eq.id) === String(state.quickAddSelectedIds?.quickAddFanPumpSelect || '') ? 'selected' : ''}>[${eq.category.toUpperCase()}] ${esc(eq.name_vi)} — ${fmtVnd(eq.base_price)} đ</option>
                 `).join('')}
               </select>
               <button class="btn btn-sm btn-navy" onclick="App.quickAddEquipment('quickAddFanPumpSelect')">
@@ -2181,9 +2186,9 @@ const App = (() => {
               </button>
             </div>
             <div class="quick-add-row">
-              <select id="quickAddServiceSelect">
+              <select id="quickAddServiceSelect" onchange="App.setQuickAddSelection('quickAddServiceSelect', this.value)">
                 ${serviceCatalog.map(eq => `
-                  <option value="${eq.id}">[DỊCH VỤ] ${esc(eq.name_vi)} — ${fmtVnd(eq.base_price)} đ</option>
+                  <option value="${eq.id}" ${String(eq.id) === String(state.quickAddSelectedIds?.quickAddServiceSelect || '') ? 'selected' : ''}>[DỊCH VỤ] ${esc(eq.name_vi)} — ${fmtVnd(eq.base_price)} đ</option>
                 `).join('')}
               </select>
               <button class="btn btn-sm btn-primary" onclick="App.quickAddEquipment('quickAddServiceSelect')">
@@ -3339,12 +3344,29 @@ const App = (() => {
     renderFlow2();
   }
 
+  function setQuickAddSelection(selectId, val) {
+    state.quickAddSelectedIds = state.quickAddSelectedIds || {};
+    if (selectId) {
+      state.quickAddSelectedIds[selectId] = String(val ?? '');
+    }
+  }
+
   function quickAddEquipment(selectId) {
     const sel = document.getElementById(selectId);
     if (!sel || !state.activeQuote) return;
     const eqId = Number(sel.value);
     const eq = state.equipment.find(e => e.id === eqId);
     if (!eq) return;
+
+    // Giữ nguyên mục vừa chọn trên tất cả các ô select thêm nhanh (không bị nhảy về mục đầu tiên sau khi render lại)
+    state.quickAddSelectedIds = state.quickAddSelectedIds || {};
+    ['quickAddInstSelect', 'quickAddFanPumpSelect', 'quickAddServiceSelect'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.value !== undefined && el.value !== '') {
+        state.quickAddSelectedIds[id] = String(el.value);
+      }
+    });
+    state.quickAddSelectedIds[selectId] = String(eq.id);
 
     const q = state.activeQuote;
     if (!q.sections || q.sections.length === 0) {
@@ -8280,6 +8302,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
     onMgmtFeePercentInput,
     onMgmtFeePercentBlur,
     setQuickMgmtFeePercent,
+    setQuickAddSelection,
     quickAddEquipment,
     updateSectionField,
     addSection,
