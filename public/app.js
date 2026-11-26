@@ -127,6 +127,42 @@ const App = (() => {
       .replace(/"/g, '&quot;');
   };
 
+  const SVG_ICONS = {
+    doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line>',
+    copy: '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>',
+    save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline>',
+    send: '<line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>',
+    mail: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline>',
+    printer: '<polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect>',
+    edit: '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>',
+    eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>',
+    trash: '<polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>',
+    check: '<polyline points="20 6 9 17 4 12"></polyline>',
+    checkCircle: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>',
+    x: '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>',
+    xCircle: '<circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line>',
+    lock: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>',
+    unlock: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path>',
+    alert: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>',
+    link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>',
+    unlink: '<path d="M18.84 12.25l1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"></path><path d="M5.17 11.75l-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"></path><line x1="8" y1="2" x2="8" y2="5"></line><line x1="2" y1="8" x2="5" y2="8"></line><line x1="16" y1="19" x2="16" y2="22"></line><line x1="19" y1="16" x2="22" y2="16"></line>',
+    sliders: '<line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line>',
+    refresh: '<polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line>',
+    upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line>',
+    table: '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line><line x1="9" y1="3" x2="9" y2="21"></line>',
+    clock: '<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>',
+    phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>',
+    zoom: '<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>',
+    layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline>',
+    userPlus: '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line>'
+  };
+
+  function iconSvg(name, extraStyle = '') {
+    const inner = SVG_ICONS[name] || SVG_ICONS.doc;
+    return `<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"${extraStyle ? ` style="${extraStyle}"` : ''}>${inner}</svg>`;
+  }
+
   // ===========================================================================
   // SHARED CONFIG, SPEC LEVEL (MÃ 11) & COMPONENT BREAKDOWN HELPERS (MÃ 03-05)
   // ===========================================================================
@@ -635,8 +671,8 @@ const App = (() => {
       const permChip = document.getElementById('permHeaderChip');
       if (permChip) {
         permChip.innerHTML = state.permissions.canViewCost
-          ? '✅ Xem Giá Cost & Duyệt BG'
-          : '🔒 Chế độ Sale: Ẩn Giá Cost';
+          ? `${iconSvg('checkCircle')} Xem Giá Cost & Duyệt BG`
+          : `${iconSvg('lock')} Chế độ Sale: Ẩn Giá Cost`;
       }
 
       const ddName = document.getElementById('dropdownFullName');
@@ -820,7 +856,7 @@ const App = (() => {
           <h2 class="card-title">Tra Cứu Cấu Hình & Báo Giá Cơ Bản</h2>
           <div class="row">
             <button class="btn btn-primary" onclick="App.startDetailedFromF1('basic_quote')" title="Xuất báo giá cơ bản 1 giá tổng, ẩn đơn giá lẻ & rút gọn thông số điện">
-              📋 Tạo Báo Giá Cơ Bản →
+              ${iconSvg('doc')} Tạo Báo Giá Cơ Bản →
             </button>
             <button class="btn btn-navy" onclick="App.startDetailedFromF1('tower_bundle')">
               Báo Giá Chi Tiết (Gộp 1 Set – Mẫu Taikisha) →
@@ -952,7 +988,7 @@ const App = (() => {
                   <td class="r">${fmtVnd(f1Calc.prodBase)}</td>
                 </tr>
                 <tr>
-                  <td class="c">✓</td>
+                  <td class="c">${iconSvg('check', 'color:var(--green)')}</td>
                   <td><strong>6. Chi phí quản lý, thiết kế (${f1Calc.mgmtPct}%)</strong></td>
                   <td>Chi phí quản lý dự án, bản vẽ thiết kế & vận hành thử (= ${f1Calc.mgmtPct}% × ${fmtVnd(f1Calc.prodBase)} đ)</td>
                   ${showCost ? `<td class="r cost-col">${fmtVnd(f1Calc.mgmtCost)}</td>` : ''}
@@ -1811,7 +1847,7 @@ const App = (() => {
             `}
           </div>
           <button class="btn btn-sm btn-navy" onclick="App.createNewRevision(${q.id})">
-            📑 Tạo Phiên Bản Mới (Rev +1)
+            ${iconSvg('copy')} Tạo Bản Mới (Rev +1)
           </button>
         </div>
       ` : ''}
@@ -1839,7 +1875,7 @@ const App = (() => {
                   · Người đảm trách (PIC): <strong style="color:var(--navy)">${esc(ppl.picName)}</strong>
                   · Người duyệt: <strong>${esc(ppl.approverName)}</strong>
                   ${(q.status === 'approved' || q.status === 'sent')
-                    ? ` <span style="color:var(--green);font-weight:700;">(✓ Đã duyệt${ppl.approvedBy ? ` bởi ${esc(ppl.approvedBy)}` : ''}${ppl.approvedAt ? ` lúc ${esc(formatDateTimeVN(ppl.approvedAt))}` : ''})</span>`
+                    ? ` <span style="color:var(--green);font-weight:700;">(Đã duyệt${ppl.approvedBy ? ` bởi ${esc(ppl.approvedBy)}` : ''}${ppl.approvedAt ? ` lúc ${esc(formatDateTimeVN(ppl.approvedAt))}` : ''})</span>`
                     : ''}
                 </div>
               </div>
@@ -1862,36 +1898,36 @@ const App = (() => {
 
             ${canEdit ? `
               <button class="btn btn-primary" onclick="App.saveActiveQuotation()">
-                💾 Lưu Báo Giá
+                ${iconSvg('save')} Lưu
               </button>
               ${(q.status === 'draft' || q.status === 'rejected' || !q.id) ? `
                 <button class="btn" style="background:#f59e0b;color:#fff;border-color:#d97706;" onclick="App.saveAndSubmitForApproval()" title="Lưu báo giá và chuyển sang trạng thái Chờ duyệt">
-                  📤 Gửi Duyệt
+                  ${iconSvg('send')} Gửi Duyệt
                 </button>
               ` : ''}
             ` : `
               <button class="btn" disabled style="opacity:0.65;cursor:not-allowed;"
                       title="${(q.status === 'approved' || q.status === 'sent') ? 'Báo giá đã duyệt/gửi KH không được chỉnh sửa trực tiếp' : `Chỉ người tạo (@${esc(q.created_by)}) hoặc Admin mới có quyền chỉnh sửa`}">
-                🔒 ${(q.status === 'approved' || q.status === 'sent') ? 'Đã duyệt (Khóa sửa)' : 'Chỉ xem'}
+                ${iconSvg('lock')} ${(q.status === 'approved' || q.status === 'sent') ? 'Đã duyệt (Khóa sửa)' : 'Chỉ xem'}
               </button>
             `}
             ${q.id ? `
               <button class="btn btn-navy" onclick="App.createNewRevision(${q.id})" title="Tạo phiên bản chỉnh sửa mới (-02, -03) giữ nguyên lịch sử giá cũ">
-                📑 Tạo Phiên Bản Mới (Rev +1)
+                ${iconSvg('copy')} Tạo Bản Mới (Rev +1)
               </button>
             ` : ''}
             ${q.id && canApprove && q.status !== 'approved' && q.status !== 'sent' ? `
               <button class="btn btn-primary" style="background:#0284c7;border-color:#0284c7" onclick="App.changeQuoteStatus(${q.id}, 'approved')">
-                ✅ Phê Duyệt Báo Giá
+                ${iconSvg('checkCircle')} Phê Duyệt Báo Giá
               </button>
             ` : ''}
             ${canUserMarkSent(q) ? `
               <button class="btn" style="background:#2563eb;color:#fff;border-color:#1d4ed8;" onclick="App.changeQuoteStatus(${q.id}, 'sent')" title="Xác nhận báo giá này đã được xuất và gửi cho khách hàng">
-                📨 Đánh dấu Đã gửi KH
+                ${iconSvg('mail')} Đánh dấu Đã gửi KH
               </button>
             ` : ''}
             <button class="btn btn-navy" onclick="App.showTab('print')">
-              🖨️ Xem Bản In / Xuất PDF Chuẩn KKVN
+              ${iconSvg('printer')} In / PDF
             </button>
           </div>
         </div>
@@ -1991,7 +2027,7 @@ const App = (() => {
                           </option>
                         `;
         }).join('')}
-                      <option value="__custom__" ${showCustomInput ? 'selected' : ''}>✍️ Tùy chỉnh tên người duyệt khác...</option>
+                      <option value="__custom__" ${showCustomInput ? 'selected' : ''}>+ Tùy chỉnh tên người duyệt khác...</option>
                     </select>
                     <input type="text" id="approverNameCustomInput"
                            style="margin-top:4px; display:${showCustomInput ? 'block' : 'none'};"
@@ -2027,7 +2063,7 @@ const App = (() => {
                           </option>
                         `;
         }).join('')}
-                      <option value="__custom__" ${showCustomPic ? 'selected' : ''}>✍️ Tùy chỉnh tên người đảm trách khác...</option>
+                      <option value="__custom__" ${showCustomPic ? 'selected' : ''}>+ Tùy chỉnh tên người đảm trách khác...</option>
                     </select>
                     <input type="text" id="picNameCustomInput"
                            style="margin-top:4px; display:${showCustomPic ? 'block' : 'none'};"
@@ -2241,7 +2277,7 @@ const App = (() => {
           </div>
 
           <div class="cfg-pill-group">
-            <span class="cfg-pill-label">📋 Thông số gửi khách:</span>
+            <span class="cfg-pill-label">${iconSvg('doc')} Thông số gửi khách:</span>
             <button type="button" class="btn btn-sm ${specDetailLevel === 'basic' ? 'btn-navy' : ''}"
                     onclick="App.setQuoteSpecDetailLevel('basic')" title="Báo giá cơ bản: ẩn kW, 3 pha, 380V, 50Hz, 4P, IE3 (Mã 11)">
               Cơ bản (Gọn)
@@ -2256,17 +2292,17 @@ const App = (() => {
         ${priceDisplayMode === 'custom_groups' ? `
           <div class="custom-group-toolbar">
             <div class="row" style="align-items:center; gap:8px; flex-wrap:wrap;">
-              <strong style="color:#1d4ed8;">🔗 Gộp nhóm linh hoạt (Mã 07):</strong>
+              <strong style="color:#1d4ed8;">${iconSvg('link')} Gộp nhóm linh hoạt (Mã 07):</strong>
               <span>Đã chọn <strong id="groupSelCount">${(state.selectedGroupItemKeys || []).length}</strong> mục</span>
               <input type="text" id="customGroupNameInput" style="width:240px;padding:4px 8px;font-size:12.5px;"
                      value="${esc(state.customGroupNameInput || '')}"
                      placeholder="Nhập tên nhóm gộp (VD: Gói thiết bị chính)..."
                      oninput="App.setCustomGroupNameInput(this.value)">
               <button type="button" class="btn btn-sm btn-primary" onclick="App.mergeSelectedItemsIntoGroup()">
-                🔗 Gộp mục đã chọn thành 1 giá
+                ${iconSvg('link')} Gộp mục đã chọn thành 1 giá
               </button>
               <button type="button" class="btn btn-sm" onclick="App.ungroupSelectedItems()">
-                ✂️ Tách khỏi nhóm
+                ${iconSvg('unlink')} Tách khỏi nhóm
               </button>
               ${existingGroupNames.length > 0 ? `
                 <span style="font-size:11.5px;color:#475569;">Nhóm hiện có: ${existingGroupNames.map(gn => `<span class="tag-group-pill">${esc(gn)}</span>`).join(' ')}</span>
@@ -2285,7 +2321,7 @@ const App = (() => {
               <div class="row-between" style="flex-wrap: wrap; gap: 12px;">
                 <div>
                   <div class="row" style="align-items: center; gap: 8px; margin-bottom: 4px;">
-                    <strong style="color: var(--navy); font-size: 13.5px;">⚙️ Điều Chỉnh Hệ Số Chênh Lệch Giá (Đơn giá = Giá gốc × Hệ số)</strong>
+                    <strong style="color: var(--navy); font-size: 13.5px;">${iconSvg('sliders')} Điều Chỉnh Hệ Số Chênh Lệch Giá (Đơn giá = Giá gốc × Hệ số)</strong>
                     <span id="bulkFactorStatusBadge" class="status-pill ${isUniform ? 'status-approved' : 'status-pending_approval'}" style="font-size: 11.5px;">
                       ${isUniform ? `Đang đồng bộ tất cả: ×${firstFactor}` : 'Đang tùy chỉnh riêng từng hạng mục'}
                     </span>
@@ -2363,7 +2399,7 @@ const App = (() => {
               <div class="sec-default-strip">
                 <div>
                   ${sec.model_ref ? `<strong>${esc(sec.model_ref.product_line)} - Model ${esc(sec.model_ref.model_code)}</strong> · ` : ''}
-                  <strong>✓ TB mặc định đi kèm:</strong>
+                  <strong>TB mặc định đi kèm:</strong>
                   ${secInstInfo.defaults.map(d => d.isIncluded
                     ? `<span class="tag-included" style="font-size:11px;">${esc(d.name_vi)} x${d.default_qty || 1}</span>`
                     : `<span class="tag-excluded" style="font-size:11px;">Đã bỏ: ${esc(d.name_vi)}</span>`
@@ -2533,7 +2569,7 @@ const App = (() => {
                                  onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E')event.preventDefault()"
                                  oninput="App.updateItemPriceCalc(${sIdx}, ${iIdx}, 'unit_price', this.value, this)"
                                  onblur="App.handleItemPriceBlur(${sIdx}, ${iIdx}, 'unit_price', this)">
-                          <div id="below-cost-${sIdx}-${iIdx}" style="color:var(--red);font-size:10.5px;font-weight:700;display:${belowCost ? 'block' : 'none'};">⚠️ Thấp hơn Cost!</div>
+                          <div id="below-cost-${sIdx}-${iIdx}" style="color:var(--red);font-size:10.5px;font-weight:700;display:${belowCost ? 'block' : 'none'};">${iconSvg('alert')} Thấp hơn Cost!</div>
                         </td>
                         <td class="r" id="cell-total-${sIdx}-${iIdx}" style="font-weight:700;">
                           ${isIncluded ? fmtVnd(it.total_price) : '<span style="color:#94a3b8;">0</span>'}
@@ -2543,7 +2579,7 @@ const App = (() => {
                                  oninput="App.updateItemField(${sIdx}, ${iIdx}, 'remark', this.value)">
                         </td>
                         <td class="c">
-                          <button class="btn btn-sm btn-danger" onclick="App.removeItem(${sIdx}, ${iIdx})" title="Xóa hạng mục này">🗑</button>
+                          <button class="btn btn-sm btn-danger" onclick="App.removeItem(${sIdx}, ${iIdx})" title="Xóa hạng mục này">${iconSvg('trash')}</button>
                         </td>
                       </tr>
                     `;
@@ -2604,7 +2640,7 @@ const App = (() => {
                 <button type="button" class="btn btn-sm" onclick="App.applyNote5InstallPreset('both')">Đã gồm cả Lắp đặt & VC</button>
                 <button type="button" class="btn btn-sm btn-navy" onclick="App.syncNote5FromServices()"
                         title="Tự động điền ghi chú theo trạng thái mục Vận chuyển (${svcCov.hasShip ? 'Có' : 'Chưa có'}) & Lắp đặt (${svcCov.hasInstall ? 'Có' : 'Chưa có'}) đang có trong báo giá">
-                  🔄 Tự khớp theo DV (${svcCov.hasShip ? 'Có VC' : 'Ko VC'} · ${svcCov.hasInstall ? 'Có LĐ' : 'Ko LĐ'})
+                  ${iconSvg('refresh')} Tự khớp theo DV (${svcCov.hasShip ? 'Có VC' : 'Ko VC'} · ${svcCov.hasInstall ? 'Có LĐ' : 'Ko LĐ'})
                 </button>
               </div>
               <textarea id="note5Textarea" rows="2" oninput="App.updateTermField('note_5_vi', this.value)">${esc(q.terms?.note_5_vi || '')}</textarea>
@@ -2702,16 +2738,16 @@ const App = (() => {
           <div class="row" style="margin-top: 14px; justify-content: flex-end;">
             ${canEdit ? `
               <button class="btn btn-primary" onclick="App.saveActiveQuotation()">
-                💾 Lưu Báo Giá Hiện Tại
+                ${iconSvg('save')} Lưu
               </button>
               ${(q.status === 'draft' || q.status === 'rejected' || !q.id) ? `
                 <button class="btn" style="background:#f59e0b;color:#fff;border-color:#d97706;" onclick="App.saveAndSubmitForApproval()">
-                  📤 Lưu & Gửi Duyệt
+                  ${iconSvg('send')} Lưu & Gửi Duyệt
                 </button>
               ` : ''}
             ` : ''}
             <button class="btn btn-navy" onclick="App.showTab('print')">
-              🖨️ Chuyển Sang Bản In / Xuất PDF Chuẩn Mẫu KKVN →
+              ${iconSvg('printer')} In / PDF →
             </button>
           </div>
         </div>
@@ -3242,7 +3278,7 @@ const App = (() => {
     if (!q) return;
     const strVal = String(rawVal ?? '').trim();
     if (strVal.includes('-') || Number(strVal) < 0) {
-      toast('⚠️ Tỷ lệ phần trăm không được để giá trị âm (-)!');
+      toast('Tỷ lệ phần trăm không được để giá trị âm (-)!');
       if (inputEl) inputEl.value = 0;
       applyMgmtFeePercentToQuote(0, inputEl, false);
       return;
@@ -3505,14 +3541,14 @@ const App = (() => {
     const itemCount = (sec.items || []).length;
 
     openConfirmModal({
-      title: '⚠️ Xác Nhận Xóa Nhóm Hạng Mục',
-      okText: '🗑 Xác nhận Xóa Nhóm',
+      title: `${iconSvg('alert')} Xác Nhận Xóa Nhóm Hạng Mục`,
+      okText: `${iconSvg('trash')} Xác nhận Xóa Nhóm`,
       isDanger: true,
       messageHtml: `
         Bạn có chắc chắn muốn xóa nhóm <strong>${esc(secTitle)}</strong> không?
         ${itemCount > 0 ? `
           <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;color:#991b1b;">
-            ⚠️ Nhóm này hiện đang có <strong>${itemCount}</strong> hạng mục. Tất cả hạng mục bên trong nhóm này sẽ bị xóa!
+            ${iconSvg('alert')} Nhóm này hiện đang có <strong>${itemCount}</strong> hạng mục. Tất cả hạng mục bên trong nhóm này sẽ bị xóa!
           </div>
         ` : ''}
       `,
@@ -3566,8 +3602,8 @@ const App = (() => {
     const itemStt = it.stt ? `STT ${it.stt} - ` : '';
 
     openConfirmModal({
-      title: '⚠️ Xác Nhận Xóa Hạng Mục',
-      okText: '🗑 Xác nhận Xóa Hạng Mục',
+      title: `${iconSvg('alert')} Xác Nhận Xóa Hạng Mục`,
+      okText: `${iconSvg('trash')} Xác nhận Xóa Hạng Mục`,
       isDanger: true,
       messageHtml: `
         Bạn có chắc chắn muốn xóa hạng mục <strong>${esc(itemStt)}${esc(itemName)}</strong> khỏi bảng báo giá không?
@@ -3698,7 +3734,7 @@ const App = (() => {
 
     const strVal = String(rawVal ?? '').trim();
     if (strVal.includes('-') || Number(strVal) < 0) {
-      toast('⚠️ Giá và hệ số điều chỉnh không được để giá trị âm (-)!');
+      toast('Giá và hệ số điều chỉnh không được để giá trị âm (-)!');
       const fallback = field === 'quantity' ? 1 : (field === 'adjustment' ? 1 : 0);
       if (inputEl) inputEl.value = fallback;
       rawVal = String(fallback);
@@ -3752,7 +3788,7 @@ const App = (() => {
 
     const strVal = String(rawVal ?? '').trim();
     if (strVal.includes('-') || Number(strVal) < 0) {
-      toast('⚠️ Hệ số chênh lệch không được để giá trị âm (-)!');
+      toast('Hệ số chênh lệch không được để giá trị âm (-)!');
       if (inputEl) inputEl.value = 1;
       rawVal = '1';
     } else if (strVal === '') {
@@ -4032,10 +4068,10 @@ const App = (() => {
     const titleEl = document.getElementById('confirmModalTitle');
     const msgEl = document.getElementById('confirmModalMessage');
     const okBtn = document.getElementById('confirmModalOkBtn');
-    if (titleEl) titleEl.textContent = title || '⚠️ Xác Nhận Thao Tác';
+    if (titleEl) titleEl.innerHTML = title || `${iconSvg('alert')} Xác Nhận Thao Tác`;
     if (msgEl) msgEl.innerHTML = messageHtml || '';
     if (okBtn) {
-      okBtn.textContent = okText;
+      okBtn.innerHTML = okText;
       okBtn.className = isDanger ? 'btn btn-danger' : 'btn btn-primary';
       if (isDanger) {
         okBtn.style.background = 'var(--red)';
@@ -4103,8 +4139,8 @@ const App = (() => {
     const q = state.activeQuote;
     const ppl = resolveQuotePeople(q);
     openConfirmModal({
-      title: '📤 Xác Nhận Lưu & Gửi Duyệt Báo Giá',
-      okText: '📤 Xác nhận Gửi duyệt',
+      title: `${iconSvg('send')} Xác Nhận Lưu & Gửi Duyệt Báo Giá`,
+      okText: `${iconSvg('send')} Xác nhận Gửi duyệt`,
       isDanger: false,
       messageHtml: `
         Bạn có chắc chắn muốn <strong>Lưu và Gửi duyệt</strong> hồ sơ báo giá này lên Quản lý / Người duyệt không?
@@ -4181,20 +4217,20 @@ const App = (() => {
     const isApprove = status === 'approved';
     const isSent = status === 'sent';
     const title = isApprove
-      ? '✅ Xác Nhận Phê Duyệt Báo Giá'
+      ? `${iconSvg('checkCircle')} Xác Nhận Phê Duyệt Báo Giá`
       : isSent
-        ? '📨 Xác Nhận Đã Gửi Báo Giá Cho Khách Hàng'
-        : '📤 Xác Nhận Gửi Duyệt Báo Giá';
+        ? `${iconSvg('mail')} Xác Nhận Đã Gửi Báo Giá Cho Khách Hàng`
+        : `${iconSvg('send')} Xác Nhận Gửi Duyệt Báo Giá`;
     const actionLabel = isApprove
       ? 'PHÊ DUYỆT'
       : isSent
         ? 'ĐÁNH DẤU ĐÃ GỬI KHÁCH HÀNG'
         : 'GỬI DUYỆT';
     const okText = isApprove
-      ? '✅ Xác nhận Phê duyệt'
+      ? `${iconSvg('checkCircle')} Xác nhận Phê duyệt`
       : isSent
-        ? '📨 Xác nhận Đã gửi KH'
-        : '📤 Xác nhận Gửi duyệt';
+        ? `${iconSvg('mail')} Xác nhận Đã gửi KH`
+        : `${iconSvg('send')} Xác nhận Gửi duyệt`;
 
     openConfirmModal({
       title,
@@ -5670,28 +5706,28 @@ const App = (() => {
             </button>
             ${isMobileViewport ? `
               <button class="btn" onclick="App.toggleMobileA4Fit()">
-                ${fitMobile ? '🔍 Phóng to 100%' : '📱 Thu vừa màn hình ĐT'}
+                ${fitMobile ? `${iconSvg('zoom')} Phóng to 100%` : `${iconSvg('zoom')} Thu vừa màn hình ĐT`}
               </button>
             ` : ''}
             <button class="btn" onclick="App.showTab('flow2')">
-              ✏️ Chỉnh sửa
+              ${iconSvg('edit')} Chỉnh sửa
             </button>
             ${canUserMarkSent(q) ? `
               <button class="btn" style="background:#2563eb;color:#fff;border-color:#1d4ed8;" onclick="App.changeQuoteStatus(${q.id}, 'sent')">
-                📨 Đánh dấu Đã gửi KH
+                ${iconSvg('mail')} Đánh dấu Đã gửi KH
               </button>
             ` : ''}
             <button class="btn" id="btnExportPdfDirect" onclick="App.exportActiveQuoteToPdf(this)" title="Tải trực tiếp file PDF (.pdf) chuẩn khổ A4 về máy (Không mở hộp thoại máy in)">
-              📄 Xuất PDF (.pdf)
+              ${iconSvg('download')} Xuất PDF (.pdf)
             </button>
             <button class="btn" onclick="App.exportActiveQuoteToWord()" title="Tải về file Word (.doc) theo mẫu đang chọn để chỉnh sửa trong Microsoft Word">
-              📝 Xuất Word (.doc)
+              ${iconSvg('doc')} Xuất Word (.doc)
             </button>
             <button class="btn" onclick="App.exportActiveQuoteToExcel()" title="Tải về file Excel (.xlsx) chuẩn bảng tính báo giá KKVN">
-              📊 Xuất Excel (.xlsx)
+              ${iconSvg('table')} Xuất Excel (.xlsx)
             </button>
             <button class="btn btn-navy" onclick="window.print()" title="Mở hộp thoại kết nối máy in để in giấy trực tiếp">
-              🖨️ In
+              ${iconSvg('printer')} In
             </button>
           </div>
         </div>
@@ -5727,7 +5763,7 @@ const App = (() => {
             <div class="watermark-controls-bar">
               <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--navy);cursor:pointer;">
                 <input type="checkbox" ${showWatermark ? 'checked' : ''} onchange="App.togglePrintWatermark(this.checked)" style="width:15px;height:15px;">
-                💧 Logo chìm giữa trang
+                ${iconSvg('layers')} Logo chìm giữa trang
               </label>
 
               <div class="row" style="align-items:center;gap:10px;">
@@ -5864,7 +5900,7 @@ const App = (() => {
     const origText = btnEl ? btnEl.innerHTML : '';
     if (btnEl) {
       btnEl.disabled = true;
-      btnEl.innerHTML = '⏳ Đang xuất PDF...';
+      btnEl.innerHTML = `${iconSvg('clock')} Đang xuất PDF...`;
     }
 
     const savedScrollX = window.scrollX || window.pageXOffset || 0;
@@ -5958,7 +5994,7 @@ const App = (() => {
       window.scrollTo(savedScrollX, savedScrollY);
       if (btnEl) {
         btnEl.disabled = false;
-        btnEl.innerHTML = origText || '📄 Xuất PDF (.pdf)';
+        btnEl.innerHTML = origText || `${iconSvg('download')} Xuất PDF (.pdf)`;
       }
     }
   }
@@ -6879,7 +6915,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
                       <span class="q-p-lbl creator">Duyệt:</span>
                       <span class="q-p-val">${esc(displayApproverMain)}</span>
                       ${(q.status === 'approved' || q.status === 'sent')
-                        ? `<span class="q-p-tick" title="${esc(approverTitle)}">✓</span>`
+                        ? `<span class="q-p-tick" title="${esc(approverTitle)}">${iconSvg('check', 'width:12px;height:12px;')}</span>`
                         : ''}
                     </div>
                   </td>
@@ -6903,26 +6939,26 @@ xmlns="http://www.w3.org/TR/REC-html40">
                     <div class="action-group-compact">
                       ${canEditRow ? `
                         <button class="btn btn-icon btn-navy" onclick="App.openQuoteToTab(${q.id}, 'flow2')" title="Chỉnh sửa báo giá">
-                          ✏️
+                          ${iconSvg('edit')}
                         </button>
                       ` : `
                         <button class="btn btn-icon" onclick="App.openQuoteToTab(${q.id}, 'flow2')" title="${esc(viewTooltip)}">
-                          👁️
+                          ${iconSvg('eye')}
                         </button>
                       `}
-                      <button class="btn btn-icon" onclick="App.openQuoteToTab(${q.id}, 'print')" title="Xem bản in / Xuất PDF">🖨️</button>
-                      <button class="btn btn-icon" onclick="App.createNewRevision(${q.id})" title="Tạo phiên bản mới (+Rev)">📑</button>
+                      <button class="btn btn-icon" onclick="App.openQuoteToTab(${q.id}, 'print')" title="Xem bản in / Xuất PDF">${iconSvg('printer')}</button>
+                      <button class="btn btn-icon" onclick="App.createNewRevision(${q.id})" title="Tạo bản mới (+Rev)">${iconSvg('copy')}</button>
                       ${canEditRow && (q.status === 'draft' || q.status === 'rejected') ? `
-                        <button class="btn btn-icon" style="background:#fef3c7;border-color:#f59e0b;color:#b45309;" onclick="App.changeQuoteStatus(${q.id}, 'pending_approval')" title="Gửi duyệt báo giá này">📤</button>
+                        <button class="btn btn-icon" style="background:#fef3c7;border-color:#f59e0b;color:#b45309;" onclick="App.changeQuoteStatus(${q.id}, 'pending_approval')" title="Gửi duyệt báo giá này">${iconSvg('send')}</button>
                       ` : ''}
                       ${canApprove && q.status !== 'approved' && q.status !== 'sent' ? `
-                        <button class="btn btn-icon btn-primary" onclick="App.changeQuoteStatus(${q.id}, 'approved')" title="Phê duyệt báo giá">✅</button>
+                        <button class="btn btn-icon btn-primary" onclick="App.changeQuoteStatus(${q.id}, 'approved')" title="Phê duyệt báo giá">${iconSvg('check')}</button>
                       ` : ''}
                       ${canMarkSentRow ? `
-                        <button class="btn btn-icon" style="background:#dbeafe;border-color:#60a5fa;color:#1d4ed8;" onclick="App.changeQuoteStatus(${q.id}, 'sent')" title="Đánh dấu Đã gửi báo giá cho Khách hàng">📨</button>
+                        <button class="btn btn-icon" style="background:#dbeafe;border-color:#60a5fa;color:#1d4ed8;" onclick="App.changeQuoteStatus(${q.id}, 'sent')" title="Đánh dấu Đã gửi báo giá cho Khách hàng">${iconSvg('mail')}</button>
                       ` : ''}
                       ${canDelete ? `
-                        <button class="btn btn-icon btn-danger" onclick="App.deleteQuote(${q.id})" title="Xóa báo giá">🗑</button>
+                        <button class="btn btn-icon btn-danger" onclick="App.deleteQuote(${q.id})" title="Xóa báo giá">${iconSvg('trash')}</button>
                       ` : ''}
                     </div>
                   </td>
@@ -6978,8 +7014,8 @@ xmlns="http://www.w3.org/TR/REC-html40">
     const ppl = resolveQuotePeople(target);
 
     openConfirmModal({
-      title: '⚠️ Xác Nhận Xóa Hồ Sơ Báo Giá',
-      okText: '🗑 Xác nhận Xóa vĩnh viễn',
+      title: `${iconSvg('alert')} Xác Nhận Xóa Hồ Sơ Báo Giá`,
+      okText: `${iconSvg('trash')} Xác nhận Xóa vĩnh viễn`,
       isDanger: true,
       messageHtml: `
         Bạn có chắc chắn muốn <strong style="color:var(--red)">XÓA VĨNH VIỄN</strong> hồ sơ báo giá này khỏi hệ thống?
@@ -6990,7 +7026,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
           <div>• Người đảm trách (PIC): <strong>${esc(ppl.picName)}</strong></div>
           <div>• Người duyệt: <strong>${esc(ppl.approverName)}</strong></div>
         </div>
-        <span style="color:var(--red);font-size:12.5px;font-weight:700;">⚠️ Lưu ý: Hành động này không thể hoàn tác sau khi xóa!</span>
+        <span style="color:var(--red);font-size:12.5px;font-weight:700;">${iconSvg('alert')} Lưu ý: Hành động này không thể hoàn tác sau khi xóa!</span>
       `,
       onConfirm: async () => {
         try {
@@ -7139,16 +7175,16 @@ xmlns="http://www.w3.org/TR/REC-html40">
           <div class="row">
             ${canExport ? `
               <a class="btn btn-navy" href="/api/catalog/export-excel?token=${encodeURIComponent(state.authToken)}" download="Data_bao_gia_Kyowa_Kako.xlsx" style="text-decoration:none">
-                📤 Xuất Danh Mục Ra Excel (.xlsx 3 Sheet)
+                ${iconSvg('download')} Xuất Danh Mục Ra Excel (.xlsx 3 Sheet)
               </a>
             ` : ''}
             ${canManageCat ? `
               <label class="btn btn-primary" style="cursor:pointer;margin:0;">
-                📥 Nhập / Cập Nhật Từ File Excel (.xlsx)
+                ${iconSvg('upload')} Nhập / Cập Nhật Từ File Excel (.xlsx)
                 <input type="file" accept=".xlsx" style="display:none" onchange="App.uploadExcelCatalog(this)">
               </label>
               <button class="btn" onclick="App.resyncDefaultExcel()">
-                🔄 Đồng bộ lại từ file Data báo giá.xlsx gốc
+                ${iconSvg('refresh')} Đồng bộ lại từ file Data báo giá.xlsx gốc
               </button>
             ` : `
               <span class="status-pill status-pending_approval">Tài khoản của bạn ở chế độ Chỉ xem Danh mục</span>
@@ -7188,7 +7224,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
               <option value="prod_desc" ${mSort === 'prod_desc' ? 'selected' : ''}>Dòng SP: Z → A (↓)</option>
             </select>
             ${(state.catModelSearch || state.catFilterProd !== 'ALL' || mSort !== 'default') ? `
-              <button class="btn btn-sm" onclick="App.resetCatModelFilter()" title="Xóa bộ lọc và sắp xếp">✕ Đặt lại</button>
+              <button class="btn btn-sm" onclick="App.resetCatModelFilter()" title="Xóa bộ lọc và sắp xếp">${iconSvg('x')} Đặt lại</button>
             ` : ''}
           </div>
           ${canManageCat ? `
@@ -7301,7 +7337,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
               <option value="cat_desc" ${eSort === 'cat_desc' ? 'selected' : ''}>Nhóm: Z → A (↓)</option>
             </select>
             ${(state.equipSearch || state.equipFilterCat !== 'ALL' || eSort !== 'default') ? `
-              <button class="btn btn-sm" onclick="App.resetEquipFilter()" title="Xóa bộ lọc và sắp xếp">✕ Đặt lại</button>
+              <button class="btn btn-sm" onclick="App.resetEquipFilter()" title="Xóa bộ lọc và sắp xếp">${iconSvg('x')} Đặt lại</button>
             ` : ''}
           </div>
           ${canManageCat ? `
@@ -7371,7 +7407,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
                   <td>${esc(eq.origin_note || '')}</td>
                   ${canManageCat ? `
                     <td class="c">
-                      <button class="btn btn-sm btn-danger" onclick="App.deleteEquip(${eq.id})">🗑</button>
+                      <button class="btn btn-sm btn-danger" onclick="App.deleteEquip(${eq.id})" title="Xóa thiết bị">${iconSvg('trash')}</button>
                     </td>
                   ` : ''}
                 </tr>
@@ -7647,7 +7683,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
           </div>
           <div class="row">
             <button class="btn" onclick="App.openChangePasswordModal()">
-              🔑 Đổi mật khẩu của tôi
+              ${iconSvg('lock')} Đổi mật khẩu của tôi
             </button>
             ${canManageUsers ? `
               <button class="btn btn-primary" onclick="App.openUserPermModal(null)">
@@ -7687,7 +7723,11 @@ xmlns="http://www.w3.org/TR/REC-html40">
                     </td>
                     <td>
                       <strong>${esc(u.full_name)}</strong>
-                      <div style="font-size:12px;color:var(--muted)">📞 ${esc(u.phone || '—')} · ✉️ ${esc(u.email || '—')}</div>
+                      <div style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px;">
+                        <span style="display:inline-flex;align-items:center;gap:3px;">${iconSvg('phone', 'width:12px;height:12px;')} ${esc(u.phone || '—')}</span>
+                        <span>·</span>
+                        <span style="display:inline-flex;align-items:center;gap:3px;">${iconSvg('mail', 'width:12px;height:12px;')} ${esc(u.email || '—')}</span>
+                      </div>
                     </td>
                     <td>
                       <div>${esc(u.title_vi || '—')}</div>
@@ -7699,7 +7739,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
                     <td style="max-width: 340px;">
                       ${Object.keys(permShortLabels).map(k => `
                         <span class="perm-tag ${p[k] ? 'on' : 'off'}">
-                          ${p[k] ? '✓' : '✕'} ${permShortLabels[k]}
+                          ${p[k] ? iconSvg('check', 'width:11px;height:11px;') : iconSvg('x', 'width:11px;height:11px;')} ${permShortLabels[k]}
                         </span>
                       `).join('')}
                     </td>
@@ -7716,15 +7756,15 @@ xmlns="http://www.w3.org/TR/REC-html40">
                       <div class="row" style="justify-content:center;gap:4px;flex-wrap:nowrap;">
                         ${canManageUsers ? `
                           <button class="btn btn-sm btn-navy" onclick="App.openUserPermModal(${u.id})">
-                            ✏️ Sửa & Phân quyền
+                            ${iconSvg('edit')} Sửa & Phân quyền
                           </button>
                           ${!isSelf ? `
                             <button class="btn btn-sm" onclick="App.toggleUserActive(${u.id}, ${u.is_active ? 0 : 1})"
                                     title="${u.is_active ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}">
-                              ${u.is_active ? '🔒 Khóa' : '🔓 Mở'}
+                              ${u.is_active ? `${iconSvg('lock')} Khóa` : `${iconSvg('unlock')} Mở`}
                             </button>
                             <button class="btn btn-sm btn-danger" onclick="App.deleteUserAccount(${u.id})">
-                              🗑
+                              ${iconSvg('trash')}
                             </button>
                           ` : ''}
                         ` : '<span style="font-size:12px;color:var(--muted)">—</span>'}
@@ -7758,31 +7798,31 @@ xmlns="http://www.w3.org/TR/REC-html40">
               <tbody>
                 <tr>
                   <td>Tra cứu cấu hình & Lập báo giá</td>
-                  <td class="c">✅</td><td class="c">✅</td><td class="c">✅</td><td class="c">✅</td>
+                  <td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td>
                 </tr>
                 <tr>
                   <td><strong>Xem Giá Cost nội bộ & Lợi nhuận</strong></td>
-                  <td class="c">✅</td><td class="c">✅</td><td class="c">❌</td><td class="c">❌</td>
+                  <td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('xCircle', 'color:#94a3b8')}</td><td class="c">${iconSvg('xCircle', 'color:#94a3b8')}</td>
                 </tr>
                 <tr>
                   <td><strong>Phê duyệt báo giá (Duyệt giá báo)</strong></td>
-                  <td class="c">✅</td><td class="c">✅</td><td class="c">❌</td><td class="c">❌</td>
+                  <td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('xCircle', 'color:#94a3b8')}</td><td class="c">${iconSvg('xCircle', 'color:#94a3b8')}</td>
                 </tr>
                 <tr>
                   <td><strong>Quản lý Danh mục & Import Excel</strong></td>
-                  <td class="c">✅</td><td class="c">✅</td><td class="c">❌</td><td class="c">❌</td>
+                  <td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('xCircle', 'color:#94a3b8')}</td><td class="c">${iconSvg('xCircle', 'color:#94a3b8')}</td>
                 </tr>
                 <tr>
                   <td>Xem Báo giá của tất cả nhân viên</td>
-                  <td class="c">✅</td><td class="c">✅</td><td class="c">✅</td><td class="c">❌ (Chỉ cá nhân)</td>
+                  <td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('xCircle', 'color:#94a3b8')} (Chỉ cá nhân)</td>
                 </tr>
                 <tr>
                   <td>Xóa Hồ sơ Báo giá</td>
-                  <td class="c">✅</td><td class="c">✅</td><td class="c">❌</td><td class="c">❌</td>
+                  <td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">${iconSvg('xCircle', 'color:#94a3b8')}</td><td class="c">${iconSvg('xCircle', 'color:#94a3b8')}</td>
                 </tr>
                 <tr>
                   <td><strong>Quản lý Tài khoản & Phân quyền</strong></td>
-                  <td class="c">✅</td><td class="c">Tùy cấp</td><td class="c">❌</td><td class="c">❌</td>
+                  <td class="c">${iconSvg('checkCircle', 'color:var(--green)')}</td><td class="c">Tùy cấp</td><td class="c">${iconSvg('xCircle', 'color:#94a3b8')}</td><td class="c">${iconSvg('xCircle', 'color:#94a3b8')}</td>
                 </tr>
               </tbody>
             </table>
@@ -7868,9 +7908,9 @@ xmlns="http://www.w3.org/TR/REC-html40">
     body.innerHTML = `
       <div class="card-header">
         <h3 class="card-title">
-          ${isEdit ? `Chỉnh Sửa Tài Khoản & Phân Quyền: ${esc(u.full_name)} (${esc(u.username)})` : '➕ Tạo Tài Khoản Người Dùng Mới & Phân Quyền'}
+          ${isEdit ? `${iconSvg('edit')} Chỉnh Sửa Tài Khoản & Phân Quyền: ${esc(u.full_name)} (${esc(u.username)})` : `${iconSvg('userPlus')} Tạo Tài Khoản Người Dùng Mới & Phân Quyền`}
         </h3>
-        <button class="btn btn-sm" onclick="App.closeUserPermModal()">✕</button>
+        <button class="btn btn-sm" onclick="App.closeUserPermModal()" aria-label="Đóng">${iconSvg('x')}</button>
       </div>
 
       <form onsubmit="App.submitUserPermForm(event)">
@@ -7898,8 +7938,8 @@ xmlns="http://www.w3.org/TR/REC-html40">
           <label class="field">
             Trạng thái tài khoản
             <select id="uf_active">
-              <option value="1" ${u.is_active ? 'selected' : ''}>✅ Đang hoạt động (Cho phép đăng nhập)</option>
-              <option value="0" ${!u.is_active ? 'selected' : ''}>🔒 Khóa tài khoản (Chặn đăng nhập)</option>
+              <option value="1" ${u.is_active ? 'selected' : ''}>Đang hoạt động (Cho phép đăng nhập)</option>
+              <option value="0" ${!u.is_active ? 'selected' : ''}>Khóa tài khoản (Chặn đăng nhập)</option>
             </select>
           </label>
           <label class="field">
@@ -7943,7 +7983,7 @@ xmlns="http://www.w3.org/TR/REC-html40">
         <div class="row" style="justify-content: flex-end;">
           <button type="button" class="btn" onclick="App.closeUserPermModal()">Hủy</button>
           <button type="submit" class="btn btn-primary">
-            💾 ${isEdit ? 'Lưu Cập Nhật & Phân Quyền' : 'Tạo Tài Khoản Mới'}
+            ${iconSvg('save')} ${isEdit ? 'Lưu Cập Nhật & Phân Quyền' : 'Tạo Tài Khoản Mới'}
           </button>
         </div>
       </form>
@@ -8112,13 +8152,15 @@ xmlns="http://www.w3.org/TR/REC-html40">
       return;
     }
 
+    const stripEmoji = (s) => String(s || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{FE0F}]/gu, '').trim();
+
     listEl.innerHTML = state.notifications.map(n => `
       <button type="button" class="notif-item ${n.is_read ? '' : 'unread'}" onclick="App.openNotification(${n.id})">
         <div class="notif-item-body">
-          <div class="notif-item-title">${esc(n.title)}</div>
-          <div class="notif-item-msg">${esc(n.message)}</div>
+          <div class="notif-item-title">${esc(stripEmoji(n.title))}</div>
+          <div class="notif-item-msg">${esc(stripEmoji(n.message))}</div>
           <div class="notif-item-time">
-            <span>🕒 ${esc(formatDateTimeVN(n.created_at))}</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;">${iconSvg('clock', 'width:11px;height:11px;')} ${esc(formatDateTimeVN(n.created_at))}</span>
             <span>${n.quote_number ? `Mở ${esc(n.quote_number)} →` : ''}</span>
           </div>
         </div>
@@ -8221,7 +8263,8 @@ xmlns="http://www.w3.org/TR/REC-html40">
       const incoming = data.notifications || [];
       const newestUnread = incoming.find(n => !n.is_read && n.id > state.lastSeenNotifId);
       if (newestUnread && !silent && state.lastSeenNotifId > 0) {
-        toast(`🔔 ${newestUnread.title}`);
+        const cleanTitle = String(newestUnread.title || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{FE0F}]/gu, '').trim();
+        toast(`Thông báo mới: ${cleanTitle}`);
         // Tải lại danh sách báo giá nếu có thông báo mới về báo giá
         loadBootstrap().then(() => {
           if (state.activeTab === 'quotes') renderQuotesList();
