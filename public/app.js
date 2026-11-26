@@ -2142,16 +2142,13 @@ const App = (() => {
                   = ${mgmtPct}% × ${fmtVnd(mgmtInfo.prodBaseSum)} đ (tổng thiết bị ${mgmtInfo.areaCount > 1 ? `${mgmtInfo.areaCount} khu vực` : 'sản xuất'}) = ${fmtVnd(mgmtInfo.base)} đ
                 </div>
                 <select style="width:100%" onchange="App.handleMgmtFeeModeChange(this.value)">
-                  <option value="separate_to_b" ${q.mgmt_fee_mode === 'separate_to_b' ? 'selected' : ''}>1. Tách sang mục B. Khác (Chuẩn mẫu Taikisha — 1 lần phí ở mục B)</option>
-                  <option value="included_in_a" ${q.mgmt_fee_mode === 'included_in_a' ? 'selected' : ''}>2. Gộp chung trong mục Sản xuất A (Không tách mục B — 1 lần phí ở mục A)</option>
-                  <option value="additional" ${q.mgmt_fee_mode === 'additional' ? 'selected' : ''}>3. Cộng bổ sung riêng (Giữ phí cơ bản ở mục A + Thêm phí bổ sung ở mục B)</option>
+                  <option value="separate_to_b" ${q.mgmt_fee_mode !== 'included_in_a' ? 'selected' : ''}>1. Tách sang mục B</option>
+                  <option value="included_in_a" ${q.mgmt_fee_mode === 'included_in_a' ? 'selected' : ''}>2. Gộp chung trong mục Sản xuất A</option>
                 </select>
                 <div style="font-size:11.5px; color:#475569; margin-top:6px; line-height:1.4;">
                   ${q.mgmt_fee_mode === 'included_in_a'
-                    ? `📌 <strong>PA 2:</strong> Tính <strong>1 lần</strong> phí (${mgmtPct}% = ${fmtVnd(mgmtInfo.base)} đ) gộp trực tiếp trong <strong>Mục A</strong>; không tách dòng phí ở Mục B.`
-                    : q.mgmt_fee_mode === 'additional'
-                      ? `📌 <strong>PA 3:</strong> Giữ khoản phí cơ bản (${mgmtPct}% = ${fmtVnd(mgmtInfo.base)} đ) trong <strong>Mục A</strong> <u>VÀ</u> cộng thêm 1 dòng phí quản lý/thiết kế bổ sung riêng tại <strong>Mục B</strong> (có thể sửa giá riêng).`
-                      : `📌 <strong>PA 1:</strong> Tính <strong>1 lần</strong> phí (${mgmtPct}% = ${fmtVnd(mgmtInfo.base)} đ) đặt tại <strong>Mục B. Khác</strong>; Mục A chỉ gồm giá thiết bị sản xuất.`
+                    ? `📌 Đang gộp dòng phí (${mgmtPct}% = ${fmtVnd(mgmtInfo.base)} đ) trực tiếp trong <strong>Mục A</strong> (không tách ở Mục B) · Tổng sau thuế giữ nguyên.`
+                    : `📌 Đang đặt dòng phí (${mgmtPct}% = ${fmtVnd(mgmtInfo.base)} đ) tại <strong>Mục B. Khác</strong> (Mục A chỉ gồm thiết bị) · Tổng sau thuế giữ nguyên.`
                   }
                 </div>
               </div>
@@ -2195,9 +2192,6 @@ const App = (() => {
         <div class="grid-2">
           <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid var(--border);">
             <strong style="color:var(--navy); display:block; margin-bottom:6px;">Thêm Thiết bị đo & Option vào Khu vực [${targetSecIdx + 1}]</strong>
-            <p style="font-size:12px; color:var(--muted); margin:0 0 8px;">
-              Thiết bị đi kèm mặc định được kiểm tra riêng theo từng khu vực/hệ (Mã 01 & 03):
-            </p>
             <div class="quick-add-row">
               <select id="quickAddInstSelect" onchange="App.setQuickAddSelection('quickAddInstSelect', this.value)">
                 ${instrumentsAndOptions.map(eq => `
@@ -3326,7 +3320,8 @@ const App = (() => {
   function handleMgmtFeeModeChange(mode) {
     const q = state.activeQuote;
     if (!q) return;
-    q.mgmt_fee_mode = mode;
+    const cleanMode = mode === 'included_in_a' ? 'included_in_a' : 'separate_to_b';
+    q.mgmt_fee_mode = cleanMode;
     q.sections = q.sections || [];
 
     const mgmtInfo = computeMgmtFeeAmounts(q);
@@ -3334,7 +3329,7 @@ const App = (() => {
     const defaultMgmtBase = mgmtInfo.base;
     const mgmtPct = mgmtInfo.pct;
 
-    if (mode === 'separate_to_b') {
+    if (cleanMode === 'separate_to_b') {
       // Phương án 1: Chỉ đặt 1 dòng Phí QL/TK tại mục B. Khác; loại bỏ dòng Phí QL/TK ở các mục sản xuất A
       const { secB, secBIdx } = findOrCreateServiceSectionB(q, true);
       q.sections.forEach((sec, idx) => {
@@ -3368,14 +3363,13 @@ const App = (() => {
         } else {
           existingInB.mgmt_role = 'primary_b';
           existingInB.name_vi = 'Thiết kế, quản lí, vận hành';
-          if (existingInB.remark === 'Bổ sung riêng') existingInB.remark = '';
         }
       }
       renumberAllSections(q);
       recalcActiveQuoteTotals();
       renderFlow2();
-      toast(`Phương án 1: Đã tách Phí QL & Thiết kế (${mgmtPct}% = ${fmtVnd(defaultMgmtBase)} đ) sang mục B. Khác (đánh lại STT tự động).`);
-    } else if (mode === 'included_in_a') {
+      toast(`Phương án 1: Đã tách Phí QL & Thiết kế (${mgmtPct}% = ${fmtVnd(defaultMgmtBase)} đ) sang mục B. Khác (Tổng sau thuế không đổi).`);
+    } else {
       // Phương án 2: Chỉ đặt 1 dòng Phí QL/TK gộp chung trong mục Sản xuất A; bỏ dòng Phí QL/TK khỏi mục B
       q.sections.forEach((sec, idx) => {
         if (idx > 0) {
@@ -3413,79 +3407,7 @@ const App = (() => {
       renumberAllSections(q);
       recalcActiveQuoteTotals();
       renderFlow2();
-      toast(`Phương án 2: Đã gộp Phí QL & Thiết kế (${mgmtPct}% = ${fmtVnd(defaultMgmtBase)} đ) vào mục A và bỏ khỏi mục B (đánh lại STT tự động).`);
-    } else if (mode === 'additional') {
-      // Phương án 3: Giữ nguyên khoản Phí QL/TK cơ bản trong mục A VÀ cộng bổ sung riêng 1 dòng Phí QL/TK tại mục B. Khác
-      const { secB, secBIdx } = findOrCreateServiceSectionB(q, true);
-      q.sections.forEach((sec, idx) => {
-        if (idx > 0 && idx !== secBIdx) {
-          sec.items = (sec.items || []).filter(it => !isMgmtFeeItem(it));
-        }
-      });
-
-      if (q.sections[0]) {
-        q.sections[0].items = q.sections[0].items || [];
-        const existingInA = q.sections[0].items.find(it => isMgmtFeeItem(it));
-        if (!existingInA) {
-          q.sections[0].items.push({
-            id: 'mgmt-a-' + Date.now(),
-            stt: String(q.sections[0].items.length + 1),
-            item_type: 'service_mgmt',
-            mgmt_role: 'primary_a',
-            included: true,
-            merge_group: '',
-            name_jp: '現場管理・設計・試運転費',
-            name_vi: `Chi phí quản lý, thiết kế cơ bản (${mgmtPct}%)`,
-            specs_text: '',
-            unit: 'Lot/Lần',
-            quantity: 1,
-            cost_price: defaultMgmtCost,
-            base_price: defaultMgmtBase,
-            adjustment: 1,
-            unit_price: defaultMgmtBase,
-            total_price: defaultMgmtBase,
-            remark: ''
-          });
-        } else {
-          existingInA.mgmt_role = 'primary_a';
-          existingInA.name_vi = `Chi phí quản lý, thiết kế cơ bản (${mgmtPct}%)`;
-        }
-      }
-
-      if (secB) {
-        secB.items = secB.items || [];
-        const existingInB = secB.items.find(it => isMgmtFeeItem(it));
-        if (!existingInB) {
-          secB.items.unshift({
-            id: 'mgmt-b-add-' + Date.now(),
-            stt: '1',
-            item_type: 'service_mgmt',
-            mgmt_role: 'additional_b',
-            included: true,
-            merge_group: '',
-            name_jp: '現場管理・設計・試運転費',
-            name_vi: 'Thiết kế, quản lý hiện trường & vận hành (bổ sung)',
-            specs_text: '',
-            unit: 'Lot/Lần',
-            quantity: 1,
-            cost_price: defaultMgmtCost,
-            base_price: defaultMgmtBase,
-            adjustment: 1,
-            unit_price: defaultMgmtBase,
-            total_price: defaultMgmtBase,
-            remark: 'Bổ sung riêng'
-          });
-        } else {
-          existingInB.mgmt_role = 'additional_b';
-          existingInB.name_vi = 'Thiết kế, quản lý hiện trường & vận hành (bổ sung)';
-          if (!existingInB.remark) existingInB.remark = 'Bổ sung riêng';
-        }
-      }
-
-      renumberAllSections(q);
-      recalcActiveQuoteTotals();
-      renderFlow2();
-      toast(`Phương án 3: Giữ phí cơ bản (${fmtVnd(defaultMgmtBase)} đ) ở mục A + Cộng thêm phí bổ sung riêng ở mục B!`);
+      toast(`Phương án 2: Đã gộp Phí QL & Thiết kế (${mgmtPct}% = ${fmtVnd(defaultMgmtBase)} đ) vào mục A (Tổng sau thuế không đổi).`);
     }
   }
 
