@@ -7652,23 +7652,23 @@ xmlns="http://www.w3.org/TR/REC-html40">
     };
 
     container.innerHTML = `
-      <!-- KPI OVERVIEW -->
-      <div class="kpi-grid">
+      <!-- COMPACT KPI OVERVIEW -->
+      <div class="users-kpi-grid">
         <div class="kpi-box">
-          <div class="kpi-label">Tổng số tài khoản hệ thống</div>
-          <div class="kpi-val">${users.length} tài khoản</div>
+          <span class="kpi-label">Tổng tài khoản</span>
+          <span class="kpi-val">${users.length}</span>
         </div>
         <div class="kpi-box amber">
-          <div class="kpi-label">Ban Giám Đốc / Quản Lý (Xem Cost & Duyệt)</div>
-          <div class="kpi-val">${adminCount} tài khoản</div>
+          <span class="kpi-label">BGĐ / Quản lý (Cost & Duyệt)</span>
+          <span class="kpi-val">${adminCount}</span>
         </div>
         <div class="kpi-box green">
-          <div class="kpi-label">Nhân viên Kinh Doanh (Sale)</div>
-          <div class="kpi-val">${saleCount} tài khoản</div>
+          <span class="kpi-label">Nhân viên KD (Sale)</span>
+          <span class="kpi-val">${saleCount}</span>
         </div>
         <div class="kpi-box">
-          <div class="kpi-label">Tài khoản đang đăng nhập</div>
-          <div class="kpi-val">${esc(state.currentUser?.full_name || '')}</div>
+          <span class="kpi-label">Đang đăng nhập</span>
+          <span class="kpi-val">${esc(state.currentUser?.full_name || '')}</span>
         </div>
       </div>
 

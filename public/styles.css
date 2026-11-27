@@ -1300,6 +1300,37 @@ table.data-table tr.selected-row td {
   font-variant-numeric: tabular-nums;
 }
 
+/* COMPACT KPI STRIP ONLY FOR TAB 6 (USERS & PERMISSIONS) */
+.users-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.users-kpi-grid .kpi-box {
+  border-left-width: 3.5px;
+  border-radius: 6px;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.users-kpi-grid .kpi-label {
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.users-kpi-grid .kpi-val {
+  font-size: 13.5px;
+  margin-top: 0;
+  white-space: nowrap;
+}
+
 .alert-box {
   padding: 10px 14px;
   border-radius: 8px;
