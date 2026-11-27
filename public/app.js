@@ -859,7 +859,7 @@ const App = (() => {
               ${iconSvg('doc')} Tạo Báo Giá Cơ Bản →
             </button>
             <button class="btn btn-navy" onclick="App.startDetailedFromF1('tower_bundle')">
-              Báo Giá Chi Tiết (Gộp 1 Set – Mẫu Taikisha) →
+              Báo Giá Chi Tiết (Gộp 1 Set) →
             </button>
             <button class="btn" onclick="App.startDetailedFromF1('itemized')">
               Báo Giá Chi Tiết (Tách rời từng hạng mục) →
