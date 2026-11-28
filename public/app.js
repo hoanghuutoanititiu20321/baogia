@@ -1529,6 +1529,10 @@ const App = (() => {
     );
   }
 
+  function isSystemHeaderItem(it) {
+    return Boolean(it && it.item_type === 'system_header');
+  }
+
   function computeMgmtFeeAmounts(q, customPct) {
     if (!q) return { pct: 5, prodCostSum: 0, prodBaseSum: 0, cost: 0, base: 0, areaCount: 0 };
     const rawPct = customPct !== undefined
@@ -1541,10 +1545,11 @@ const App = (() => {
     let hasAnyProdItems = false;
     let areaCount = 0;
 
-    // Mã 09: Tổng hợp thiết bị sản xuất trên TẤT CẢ các khu vực / hệ (A1, A2, ...), bỏ qua mục không báo giá
+    // Mã 09: Tổng hợp thiết bị sản xuất trên TẤT CẢ các khu vực / hệ (A1, A2, ...), bỏ qua mục không báo giá & tiêu đề hệ
     (q.sections || []).forEach(sec => {
       let secHasIncludedProd = false;
       (sec.items || []).forEach(it => {
+        if (isSystemHeaderItem(it)) return;
         if (!isMgmtFeeItem(it) && it.item_type !== 'service') {
           hasAnyProdItems = true;
           if (it.included === false) return;
@@ -1581,6 +1586,7 @@ const App = (() => {
     const mgmtInfo = computeMgmtFeeAmounts(q);
     (q.sections || []).forEach(sec => {
       (sec.items || []).forEach(it => {
+        if (isSystemHeaderItem(it)) return;
         if (isMgmtFeeItem(it)) {
           it.item_type = 'service_mgmt';
           if (it.included === false || it._manualMgmtPrice) return;
@@ -1594,36 +1600,92 @@ const App = (() => {
     });
   }
 
-  function renumberSectionItems(sec) {
-    if (!sec || !Array.isArray(sec.items)) return;
-    let seq = 1;
-    sec.items.forEach(it => {
-      if (it.included === false) {
-        it.stt = '—';
+  function splitSectionIntoSubBlocks(items = []) {
+    const blocks = [];
+    let current = { header: null, items: [] };
+    (items || []).forEach(it => {
+      if (isSystemHeaderItem(it)) {
+        if (current.header || current.items.length > 0) {
+          blocks.push(current);
+        }
+        current = { header: it, items: [] };
       } else {
-        it.stt = String(seq++);
+        current.items.push(it);
       }
+    });
+    if (current.header || current.items.length > 0) {
+      blocks.push(current);
+    }
+    return blocks;
+  }
+
+  function renumberSectionItems(sec, forceResetCustom = false) {
+    if (!sec || !Array.isArray(sec.items)) return;
+    const blocks = splitSectionIntoSubBlocks(sec.items);
+    let headerIdx = 0;
+
+    blocks.forEach(blk => {
+      if (blk.header) {
+        headerIdx++;
+        if (blk.header.included === false) {
+          // giữ nguyên ký hiệu hệ để khi bật lại không mất
+        } else if (!String(blk.header.stt || '').trim()) {
+          blk.header.stt = `A${headerIdx}`;
+        }
+      }
+
+      // Thu thập các STT tùy chỉnh hợp lệ trong cụm con này để không bao giờ đánh số tự động trùng với STT người dùng tự đặt
+      const takenCustomStts = new Set();
+      if (!forceResetCustom) {
+        blk.items.forEach(it => {
+          if (it.included !== false && it.stt_custom && String(it.stt || '').trim() !== '') {
+            takenCustomStts.add(String(it.stt).trim());
+          }
+        });
+      }
+
+      let seq = 1;
+      blk.items.forEach(it => {
+        if (it.included === false) {
+          it.stt = '—';
+          return;
+        }
+        if (!forceResetCustom && it.stt_custom && String(it.stt || '').trim() !== '') {
+          return;
+        }
+        while (takenCustomStts.has(String(seq))) seq++;
+        it.stt = String(seq++);
+        it.stt_custom = false;
+      });
     });
   }
 
-  function renumberAllSections(q) {
+  function renumberAllSections(q, forceResetCustom = false) {
     if (!q || !Array.isArray(q.sections)) return;
-    q.sections.forEach(sec => renumberSectionItems(sec));
+    q.sections.forEach(sec => renumberSectionItems(sec, forceResetCustom));
   }
 
   function healDuplicateOrBrokenSectionStts(q) {
     if (!q || !Array.isArray(q.sections)) return;
     q.sections.forEach(sec => {
-      const items = sec.items || [];
-      const active = items.filter(it => it.included !== false);
-      const stts = active.map(it => String(it.stt ?? '').trim());
-      const hasEmptyOrDash = stts.some(s => !s || s === '—');
-      const hasDuplicate = new Set(stts).size !== stts.length;
-      if (hasEmptyOrDash || hasDuplicate) {
-        renumberSectionItems(sec);
+      const blocks = splitSectionIntoSubBlocks(sec.items || []);
+      let needsRenumber = false;
+      blocks.forEach(blk => {
+        const active = blk.items.filter(it => it.included !== false);
+        const stts = active.map(it => String(it.stt ?? '').trim());
+        const hasEmptyOrDash = stts.some(s => !s || s === '—');
+        // Chỉ tự sửa trùng cho các mục không có cờ tùy chỉnh (tránh xóa mất STT tùy chỉnh người dùng vừa nhập như A1.)
+        const hasDuplicate = new Set(stts).size !== stts.length;
+        if (hasEmptyOrDash || hasDuplicate) {
+          needsRenumber = true;
+        }
+      });
+
+      if (needsRenumber) {
+        renumberSectionItems(sec, false);
       } else {
-        items.forEach(it => {
-          if (it.included === false) it.stt = '—';
+        (sec.items || []).forEach(it => {
+          if (!isSystemHeaderItem(it) && it.included === false) it.stt = '—';
         });
       }
     });
@@ -1696,6 +1758,14 @@ const App = (() => {
     (q.sections || []).forEach(sec => {
       let secTotal = 0;
       (sec.items || []).forEach(it => {
+        if (isSystemHeaderItem(it)) {
+          it.quantity = 0;
+          it.cost_price = 0;
+          it.base_price = 0;
+          it.unit_price = 0;
+          it.total_price = 0;
+          return;
+        }
         normalizeItemPricing(it);
         if (it.included === false) {
           it.total_price = 0;
@@ -2107,7 +2177,7 @@ const App = (() => {
                     onchange="App.setQuickAddTargetSection(this.value)">
               ${secList.map((sec, idx) => `
                 <option value="${idx}" ${idx === targetSecIdx ? 'selected' : ''}>
-                  [${idx + 1}] ${esc(sec.title || sec.code || `Nhóm ${idx + 1}`)} (${(sec.items || []).filter(x => x.included !== false).length} mục)
+                  [${idx + 1}] ${esc(sec.title || sec.code || `Nhóm ${idx + 1}`)} (${(sec.items || []).filter(x => x.included !== false && !isSystemHeaderItem(x)).length} mục)
                 </option>
               `).join('')}
             </select>
@@ -2312,7 +2382,7 @@ const App = (() => {
         ` : ''}
 
         ${(() => {
-        const allItems = (q.sections || []).flatMap(s => s.items || []).filter(x => x.included !== false);
+        const allItems = (q.sections || []).flatMap(s => s.items || []).filter(x => x.included !== false && !isSystemHeaderItem(x));
         const firstFactor = allItems.length > 0 ? Number(allItems[0].adjustment ?? 1) : 1;
         const isUniform = allItems.length > 0 && allItems.every(it => Math.abs(Number(it.adjustment ?? 1) - firstFactor) < 0.0001);
         const bulkVal = isUniform ? firstFactor : (q.bulk_factor ?? 1);
@@ -2379,14 +2449,22 @@ const App = (() => {
                 </label>
               </div>
               <div class="row" style="gap:6px;">
+                <!--
                 <button type="button" class="btn btn-sm ${isActiveTarget ? 'btn-navy' : ''}"
                         onclick="App.setQuickAddTargetSection(${sIdx})"
                         title="Chọn nhóm này làm điểm đến cho bộ công cụ thêm nhanh thiết bị & nạp hệ tháp ở trên">
                   ${isActiveTarget ? ' Đang chọn thêm nhanh' : ' Chọn thêm nhanh'}
                 </button>
+                <button type="button" class="btn btn-sm" style="border-color:#93c5fd;color:#1d4ed8;background:#eff6ff;"
+                        onclick="App.addSystemHeaderItem(${sIdx})"
+                        title="Thêm dòng tiêu đề phân tách từng hệ tháp riêng (VD: A1 - Hệ tháp 1, A2 - Hệ tháp 2) để thiết bị hiển thị đúng dưới từng hệ">
+                  + Tiêu Đề Hệ
+                </button>
+                -->
                 <button class="btn btn-sm btn-primary" onclick="App.addBlankItem(${sIdx})">
                   + Thêm Hạng Mục
                 </button>
+                
                 ${q.sections.length > 1 ? `
                   <button class="btn btn-sm btn-danger" onclick="App.removeSection(${sIdx})" title="Xóa nhóm này">
                     Xóa
@@ -2413,7 +2491,14 @@ const App = (() => {
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th style="width:62px" class="c" title="Bỏ tích để không báo giá hạng mục này (giữ lại dòng để đối chiếu)">Báo giá / STT</th>
+                    <th style="width:98px" class="c" title="Bỏ tích để không báo giá; nhập STT tùy chỉnh (VD: A1., 1.1) hoặc dùng ▲▼ để đổi thứ tự dòng">STT 
+                        <button type="button"
+                          style="background: transparent; border: none; padding: 0; margin-left: 4px; cursor: pointer; font-size: inherit; color: inherit;"
+                          onclick="App.resetSectionStt(${sIdx})"
+                          title="Đánh lại STT tự động 1, 2, 3... theo từng hệ trong nhóm này">
+                          ↻
+                        </button>
+                    </th>
                     ${priceDisplayMode === 'custom_groups' ? '<th style="width:36px" class="c" title="Chọn nhiều dòng để gộp thành 1 nhóm giá">Gộp</th>' : ''}
                     <th style="width:118px; min-width:110px;">Tên tiếng Nhật</th>
                     <th style="min-width:290px;">Tên hạng mục & Thông số / Cấu hình đi kèm</th>
@@ -2431,6 +2516,48 @@ const App = (() => {
                 <tbody>
                   ${(sec.items || []).map((it, iIdx) => {
         const isIncluded = it.included !== false;
+        const isFirstRow = iIdx === 0;
+        const isLastRow = iIdx === (sec.items || []).length - 1;
+        if (isSystemHeaderItem(it)) {
+          const rightSpan = (showCost ? 8 : 7);
+          return `
+                      <tr class="system-header-edit-row ${isIncluded ? '' : 'row-excluded'}">
+                        <td class="c">
+                          <div class="stt-cell-wrap">
+                            <input type="checkbox" ${isIncluded ? 'checked' : ''}
+                                   style="width:15px;height:15px;cursor:pointer;"
+                                   title="Hiển thị / ẩn dòng tiêu đề hệ này trên bản in"
+                                   onchange="App.toggleItemIncluded(${sIdx}, ${iIdx}, this.checked)">
+                            <input type="text" style="width:44px;text-align:center;padding:3px 4px;font-weight:800;color:#1d4ed8;border-color:#93c5fd;background:#fff;"
+                                   value="${esc(it.stt || '')}" placeholder="A1"
+                                   title="Ký hiệu hệ hiển thị ở cột STT trên bản in (VD: A1, A2, I, II)"
+                                   oninput="App.updateItemStt(${sIdx}, ${iIdx}, this.value)">
+                            <div class="stt-move-stack">
+                              <button type="button" class="stt-move-btn" ${isFirstRow ? 'disabled' : ''} onclick="App.moveItemInSection(${sIdx}, ${iIdx}, -1)" title="Di chuyển lên">▲</button>
+                              <button type="button" class="stt-move-btn" ${isLastRow ? 'disabled' : ''} onclick="App.moveItemInSection(${sIdx}, ${iIdx}, 1)" title="Di chuyển xuống">▼</button>
+                            </div>
+                          </div>
+                        </td>
+                        ${priceDisplayMode === 'custom_groups' ? '<td class="c">—</td>' : ''}
+                        <td>
+                          <input type="text" style="width:100%;padding:5px;background:#fff;" value="${esc(it.name_jp || '')}" placeholder="システム (tùy chọn)"
+                                 oninput="App.updateItemField(${sIdx}, ${iIdx}, 'name_jp', this.value)">
+                        </td>
+                        <td>
+                          <input type="text" style="width:100%;font-weight:800;color:#1e3a8a;border-color:#93c5fd;background:#fff;"
+                                 value="${esc(it.name_vi || '')}"
+                                 placeholder="VD: Hệ 1 – Tháp xử lý khí FSD 0.5 - Model 55 (35 m³/min)"
+                                 oninput="App.updateItemField(${sIdx}, ${iIdx}, 'name_vi', this.value)">
+                        </td>
+                        <td colspan="${rightSpan}" style="font-size:11.5px;color:#475569;">
+                          <span class="tag-group-pill">Tiêu đề Hệ Tháp</span>
+                        </td>
+                        <td class="c">
+                          <button type="button" class="btn btn-sm btn-danger" onclick="App.removeItem(${sIdx}, ${iIdx})" title="Xóa tiêu đề hệ này">${iconSvg('trash')}</button>
+                        </td>
+                      </tr>
+                    `;
+        }
         const belowCost = isIncluded && showCost && it.cost_price && it.unit_price < it.cost_price;
         const itemKey = `${sIdx}:${iIdx}`;
         const isCheckedForGroup = (state.selectedGroupItemKeys || []).includes(itemKey);
@@ -2438,13 +2565,19 @@ const App = (() => {
         return `
                       <tr class="${isIncluded ? '' : 'row-excluded'}">
                         <td class="c">
-                          <div style="display:flex;align-items:center;justify-content:center;gap:4px;">
+                          <div class="stt-cell-wrap">
                             <input type="checkbox" ${isIncluded ? 'checked' : ''}
                                    style="width:15px;height:15px;cursor:pointer;"
                                    title="${isIncluded ? 'Đang tính vào báo giá (Bỏ tích để KHÔNG báo giá mục này)' : 'Đang ẩn / KHÔNG báo giá (Tích để tính lại)'}"
                                    onchange="App.toggleItemIncluded(${sIdx}, ${iIdx}, this.checked)">
-                            <input type="text" style="width:34px;text-align:center;padding:3px" value="${esc(it.stt)}"
-                                   oninput="App.updateItemField(${sIdx}, ${iIdx}, 'stt', this.value)">
+                            <input type="text" style="width:44px;text-align:center;padding:3px 4px;${it.stt_custom ? 'border-color:#60a5fa;background:#eff6ff;font-weight:700;color:#1d4ed8;' : ''}"
+                                   value="${esc(it.stt)}"
+                                   title="${it.stt_custom ? 'STT tùy chỉnh (hiển thị nguyên văn trên bản in)' : 'STT tự động (có thể nhập tay, VD: A1., 1.1)'}"
+                                   oninput="App.updateItemStt(${sIdx}, ${iIdx}, this.value)">
+                            <div class="stt-move-stack">
+                              <button type="button" class="stt-move-btn" ${isFirstRow ? 'disabled' : ''} onclick="App.moveItemInSection(${sIdx}, ${iIdx}, -1)" title="Di chuyển lên">▲</button>
+                              <button type="button" class="stt-move-btn" ${isLastRow ? 'disabled' : ''} onclick="App.moveItemInSection(${sIdx}, ${iIdx}, 1)" title="Di chuyển xuống">▼</button>
+                            </div>
                           </div>
                           ${!isIncluded ? '<div style="margin-top:2px;"><span class="tag-excluded" style="font-size:9.5px;">Không BG</span></div>' : ''}
                         </td>
@@ -2464,7 +2597,7 @@ const App = (() => {
                                  placeholder="Tên thiết bị / dịch vụ..."
                                  oninput="App.updateItemField(${sIdx}, ${iIdx}, 'name_vi', this.value)">
                           <input type="text" style="width:100%;font-size:12px;color:#374151;" value="${esc(it.specs_text || '')}"
-                                 placeholder="Dòng thông số phụ (VD: 2,100 CMH  750 Pa  1.5 Kw, 3phase, 380V...)"
+                                 placeholder="Thông số (VD: 2,100 CMH  750 Pa  1.5 Kw, 3phase, 380V...)"
                                  oninput="App.updateItemField(${sIdx}, ${iIdx}, 'specs_text', this.value)">
                           ${(specDetailLevel === 'basic' && it.specs_text && formatSpecForLevel(it.specs_text, 'basic') !== it.specs_text.trim()) ? `
                             <div style="font-size:11px;color:#0369a1;margin-top:2px;">
@@ -2504,7 +2637,7 @@ const App = (() => {
                           <div style="margin-top:6px;">
                             <div class="row-between" style="margin-bottom:4px;">
                               <button class="btn btn-sm" style="padding:2px 8px;font-size:11px;" onclick="App.addSubLine(${sIdx}, ${iIdx})">
-                                + Thêm dòng mô tả con
+                                + Thêm mô tả
                               </button>
                             </div>
                             ${(it.sub_lines || []).map((sl, slIdx) => `
@@ -2516,7 +2649,7 @@ const App = (() => {
                                        value="${esc(sl.right_text || '')}" placeholder="x 1 set"
                                        oninput="App.updateSubLine(${sIdx}, ${iIdx}, ${slIdx}, 'right_text', this.value)">
                                 <input type="text" style="width:110px;padding:3px 6px;font-size:12px;background:#f8fafc"
-                                       value="${esc(sl.remark || '')}" placeholder="Ghi chú dòng con"
+                                       value="${esc(sl.remark || '')}" placeholder="Ghi chú"
                                        oninput="App.updateSubLine(${sIdx}, ${iIdx}, ${slIdx}, 'remark', this.value)">
                                 <button class="btn btn-sm btn-danger" style="padding:2px 6px;font-size:11px;"
                                         title="${sl.component_key ? 'Xóa dòng này sẽ trừ luôn giá cấu phần tương ứng khỏi gói' : 'Xóa dòng mô tả con'}"
@@ -2945,6 +3078,29 @@ const App = (() => {
     return list.find(m => String(m.model_code) === String(state.quickTowerModelCode)) || list[0] || state.models[0];
   }
 
+  function makeSystemHeaderObject(codeLabel, titleVi, titleJp = '') {
+    return {
+      id: 'syshdr-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+      stt: codeLabel,
+      stt_custom: true,
+      item_type: 'system_header',
+      included: true,
+      merge_group: '',
+      name_jp: titleJp,
+      name_vi: titleVi,
+      specs_text: '',
+      unit: '',
+      quantity: 0,
+      cost_price: 0,
+      base_price: 0,
+      adjustment: 1,
+      unit_price: 0,
+      total_price: 0,
+      remark: '',
+      sub_lines: []
+    };
+  }
+
   function insertTowerIntoSection(secIdx) {
     const q = state.activeQuote;
     const m = getSelectedQuickTowerModel();
@@ -2956,6 +3112,26 @@ const App = (() => {
     const sec = q.sections[safeIdx];
     const newItems = buildItemsForTowerModel(m, state.quickTowerInsertMode || 'itemized', {}, {}, `s${safeIdx}-${Date.now()}`);
     sec.items = sec.items || [];
+
+    const existingRealItems = sec.items.filter(x => !isSystemHeaderItem(x));
+    const existingHeaders = sec.items.filter(x => isSystemHeaderItem(x));
+
+    // Nếu nhóm đã có sẵn thiết bị của hệ trước đó -> tự động tách bằng Tiêu đề hệ riêng (A1, A2...) để không cần gõ ký hiệu hệ vào tên từng thiết bị
+    if (existingRealItems.length > 0 && existingHeaders.length === 0) {
+      const prevModelText = sec.model_ref?.product_line
+        ? `${sec.model_ref.product_line} - Model ${sec.model_ref.model_code}`
+        : (q.selected_product_line ? `${q.selected_product_line} - Model ${q.selected_model_code}` : 'Hệ tháp xử lý khí 1');
+      sec.items.unshift(makeSystemHeaderObject('A1', `Hệ 1 – ${prevModelText}`));
+    }
+
+    const nextSysNum = sec.items.filter(x => isSystemHeaderItem(x)).length + 1;
+    if (existingRealItems.length > 0 || existingHeaders.length > 0) {
+      sec.items.push(makeSystemHeaderObject(
+        `A${nextSysNum}`,
+        `Hệ ${nextSysNum} – ${m.product_line} - Model ${m.model_code} (${m.flow_rate} m³/min)`
+      ));
+    }
+
     sec.model_ref = { product_line: m.product_line, model_code: String(m.model_code) };
     sec.excluded_default_insts = sec.excluded_default_insts || {};
     newItems.forEach(ni => {
@@ -2965,7 +3141,7 @@ const App = (() => {
     state.quickAddTargetSecIdx = safeIdx;
     recalcActiveQuoteTotals();
     renderFlow2();
-    toast(`Đã nạp Hệ tháp ${m.product_line} - Model ${m.model_code} vào "${sec.title || `Khu vực ${safeIdx + 1}`}" (tự động cập nhật Phí QL/TK & tổng)!`);
+    toast(`Đã nạp Hệ tháp ${m.product_line} - Model ${m.model_code} vào "${sec.title || `Khu vực ${safeIdx + 1}`}" kèm tiêu đề phân hệ riêng!`);
   }
 
   function addNewAreaWithTower() {
@@ -2981,6 +3157,23 @@ const App = (() => {
     });
     const prodSecCount = secBIdx >= 0 ? secBIdx : q.sections.length;
     const areaNum = prodSecCount + 1;
+
+    // Nếu Khu vực 1 vẫn đang mang tiêu đề chung "A./製造 Sản xuất" -> nâng cấp lên "A1./ Khu vực 1 – ..." cho đồng bộ với A2
+    if (prodSecCount === 1 && q.sections[0]) {
+      const s0 = q.sections[0];
+      const s0Title = String(s0.title || '').trim();
+      if (/^A\.\//i.test(s0Title) && !/^A1/i.test(s0Title)) {
+        const m0Label = s0.model_ref?.product_line
+          ? ` – Hệ tháp ${s0.model_ref.product_line} Model ${s0.model_ref.model_code}`
+          : (q.selected_product_line ? ` – Hệ tháp ${q.selected_product_line} Model ${q.selected_model_code}` : '');
+        s0.title = `A1./ Khu vực 1${m0Label}`;
+        s0.code = s0.title;
+        if (!s0.subtotalLabel || s0.subtotalLabel === 'TOTAL (A)') {
+          s0.subtotalLabel = 'TOTAL (A1)';
+        }
+      }
+    }
+
     const areaTitle = `A${areaNum}./ Khu vực ${areaNum} – Hệ tháp ${m.product_line} Model ${m.model_code}`;
     const newItems = buildItemsForTowerModel(m, state.quickTowerInsertMode || 'itemized', {}, {}, `area${areaNum}-${Date.now()}`);
 
@@ -3006,9 +3199,10 @@ const App = (() => {
     }
 
     state.quickAddTargetSecIdx = insertAt;
+    renumberAllSections(q);
     recalcActiveQuoteTotals();
     renderFlow2();
-    toast(`Đã tạo "${areaTitle}" kèm đầy đủ cấu hình & tự động cập nhật Phí QL/TK!`);
+    toast(`Đã tạo "${areaTitle}" kèm tiêu đề hệ riêng & tự động cập nhật Phí QL/TK!`);
   }
 
   function setQuotePriceDisplayMode(mode) {
@@ -3504,7 +3698,7 @@ const App = (() => {
       sec.code = val;
       const sel = document.getElementById('quickAddTargetSectionSelect');
       if (sel && sel.options[sIdx]) {
-        sel.options[sIdx].textContent = `[${sIdx + 1}] ${val || `Nhóm ${sIdx + 1}`} (${(sec.items || []).filter(x => x.included !== false).length} mục)`;
+        sel.options[sIdx].textContent = `[${sIdx + 1}] ${val || `Nhóm ${sIdx + 1}`} (${(sec.items || []).filter(x => x.included !== false && !isSystemHeaderItem(x)).length} mục)`;
       }
     }
     if (field === 'showSubtotal') renderFlow2();
@@ -3619,6 +3813,52 @@ const App = (() => {
     });
   }
 
+  function addSystemHeaderItem(sIdx) {
+    const sec = state.activeQuote?.sections?.[sIdx];
+    if (!sec) return;
+    sec.items = sec.items || [];
+    const curHeaderCount = sec.items.filter(x => isSystemHeaderItem(x)).length;
+    const nextNum = curHeaderCount + 1;
+    const hdr = makeSystemHeaderObject(`A${nextNum}`, `Hệ ${nextNum} – Hệ tháp xử lý khí`);
+    // Nếu chưa có tiêu đề hệ nào trong nhóm mà đã có thiết bị -> chèn lên đầu nhóm để làm tiêu đề cho Hệ 1 luôn; còn lại nối cuối để bắt đầu Hệ mới
+    if (curHeaderCount === 0 && sec.items.length > 0) {
+      sec.items.unshift(hdr);
+    } else {
+      sec.items.push(hdr);
+    }
+    renumberSectionItems(sec);
+    renderFlow2();
+    toast(`Đã thêm tiêu đề hệ "${hdr.stt} – ${hdr.name_vi}" (dùng mũi tên ↑↓ để điều chỉnh vị trí nếu cần).`);
+  }
+
+  function resetSectionStt(sIdx) {
+    const sec = state.activeQuote?.sections?.[sIdx];
+    if (!sec) return;
+    renumberSectionItems(sec, true);
+    renderFlow2();
+    toast('Đã đánh lại STT tự động (1, 2, 3...) theo từng hệ trong nhóm này!');
+  }
+
+  function moveItemInSection(sIdx, iIdx, delta) {
+    const sec = state.activeQuote?.sections?.[sIdx];
+    if (!sec || !Array.isArray(sec.items)) return;
+    const targetIdx = iIdx + Number(delta || 0);
+    if (targetIdx < 0 || targetIdx >= sec.items.length) return;
+    const [moved] = sec.items.splice(iIdx, 1);
+    sec.items.splice(targetIdx, 0, moved);
+    renumberSectionItems(sec, false);
+    state.selectedGroupItemKeys = [];
+    renderFlow2();
+  }
+
+  function updateItemStt(sIdx, iIdx, val) {
+    const it = state.activeQuote?.sections?.[sIdx]?.items?.[iIdx];
+    if (!it) return;
+    const str = String(val ?? '');
+    it.stt = str;
+    it.stt_custom = Boolean(str.trim());
+  }
+
   function updateItemField(sIdx, iIdx, field, val) {
     const it = state.activeQuote?.sections?.[sIdx]?.items?.[iIdx];
     if (!it) return;
@@ -3678,7 +3918,7 @@ const App = (() => {
       if (secSub) secSub.textContent = fmtVnd(sec.subtotal);
     });
 
-    const allItems = (q.sections || []).flatMap(s => s.items || []).filter(x => x.included !== false);
+    const allItems = (q.sections || []).flatMap(s => s.items || []).filter(x => x.included !== false && !isSystemHeaderItem(x));
     const firstFactor = allItems.length > 0 ? Number(allItems[0].adjustment ?? 1) : 1;
     const isUniform = allItems.length > 0 && allItems.every(it => Math.abs(Number(it.adjustment ?? 1) - firstFactor) < 0.0001);
 
@@ -3801,6 +4041,7 @@ const App = (() => {
     q.bulk_factor = factor;
     (q.sections || []).forEach(sec => {
       (sec.items || []).forEach(it => {
+        if (isSystemHeaderItem(it)) return;
         it.adjustment = factor;
         it._keepExactUnitPrice = false;
         it.unit_price = Math.max(0, Math.round(Number(it.base_price || 0) * factor));
@@ -4509,17 +4750,27 @@ const App = (() => {
 
     if (mode === 'single_total') {
       // Mã 06 & Mã 04: 1 giá tổng toàn bộ — liệt kê đầy đủ thiết bị nhưng ẩn đơn giá & thành tiền từng mục
-      let runningStt = 1;
       sections.forEach(sec => {
         const activeItems = (sec.items || []).filter(it => it.included !== false);
         if (activeItems.length === 0) return;
         if (sec.title && sec.title.trim()) {
           rows.push({ kind: 'sec_header', title: sec.title });
         }
+        let runningStt = 1;
         activeItems.forEach(it => {
+          if (isSystemHeaderItem(it)) {
+            rows.push({
+              kind: 'system_header',
+              stt: String(it.stt || '').trim(),
+              title: `${it.name_jp ? it.name_jp + ' ' : ''}${it.name_vi || ''}`.trim()
+            });
+            runningStt = 1;
+            return;
+          }
+          const customOrSeqStt = String(it.stt || '').trim() || String(runningStt);
           rows.push({
             kind: 'item',
-            stt: it.stt || String(runningStt),
+            stt: customOrSeqStt,
             title: `${it.name_jp ? it.name_jp + ' ' : ''}${it.name_vi || ''}`,
             unit: it.unit || '',
             qty: it.quantity || 1,
@@ -4543,11 +4794,59 @@ const App = (() => {
     }
 
     if (mode === 'per_section') {
-      // Mã 06: 1 giá trọn gói cho từng hệ / khu vực — ẩn giá thiết bị lẻ bên trong
+      // Mã 06 & Mã 16: 1 giá trọn gói cho từng hệ / khu vực — nếu trong 1 mục có nhiều Tiêu đề hệ (A1, A2) thì tự tách giá theo từng hệ!
       let secDisplayIdx = 0;
       sections.forEach(sec => {
-        const activeItems = (sec.items || []).filter(it => it.included !== false);
-        if (activeItems.length === 0) return;
+        const activeAll = (sec.items || []).filter(it => it.included !== false);
+        const activeReal = activeAll.filter(it => !isSystemHeaderItem(it));
+        if (activeReal.length === 0) return;
+
+        const subBlocks = splitSectionIntoSubBlocks(activeAll)
+          .filter(b => b.items.some(x => x.included !== false));
+        const hasMultipleSystemHeaders = subBlocks.some(b => Boolean(b.header));
+
+        if (hasMultipleSystemHeaders) {
+          if (sec.title && sec.title.trim()) {
+            rows.push({ kind: 'sec_header', title: sec.title });
+          }
+          subBlocks.forEach((blk, bIdx) => {
+            const blkItems = blk.items.filter(x => x.included !== false);
+            if (blkItems.length === 0) return;
+            const blkTotal = blkItems.reduce((sum, x) => sum + Number(x.total_price || 0), 0);
+            const blkStt = blk.header
+              ? (String(blk.header.stt || '').trim() || `A${bIdx + 1}`)
+              : (romanLabels[secDisplayIdx] || String(secDisplayIdx + 1));
+            secDisplayIdx++;
+            const blkTitle = blk.header
+              ? `${blk.header.name_jp ? blk.header.name_jp + ' ' : ''}${blk.header.name_vi || ''}`.trim()
+              : ((sec.title && sec.title.trim()) ? sec.title.trim() : `Hệ thống ${secDisplayIdx}`);
+            rows.push({
+              kind: 'item',
+              stt: blkStt,
+              title: blkTitle,
+              unit: 'Hệ / Gói',
+              qty: 1,
+              unitPrice: blkTotal,
+              totalPrice: blkTotal,
+              remark: `${blkItems.length} hạng mục`,
+              hidePrices: false,
+              rowClass: 'bundle-section-row'
+            });
+            blkItems.forEach(it => {
+              const itemLabel = `- ${it.name_jp ? it.name_jp + ' ' : ''}${it.name_vi || ''}`;
+              rows.push({
+                kind: 'sub_line',
+                text: itemLabel,
+                rightText: `x ${it.quantity || 1} ${it.unit || ''}`.trim(),
+                remark: it.remark || '',
+                indentLevel: 1
+              });
+              pushItemDetailLines(it, 2);
+            });
+          });
+          return;
+        }
+
         const secStt = romanLabels[secDisplayIdx] || String(secDisplayIdx + 1);
         secDisplayIdx++;
         const secTitle = (sec.title && sec.title.trim()) ? sec.title.trim() : `Hệ thống / Khu vực ${secDisplayIdx}`;
@@ -4559,11 +4858,11 @@ const App = (() => {
           qty: 1,
           unitPrice: sec.subtotal,
           totalPrice: sec.subtotal,
-          remark: `${activeItems.length} hạng mục`,
+          remark: `${activeReal.length} hạng mục`,
           hidePrices: false,
           rowClass: 'bundle-section-row'
         });
-        activeItems.forEach(it => {
+        activeReal.forEach(it => {
           const itemLabel = `- ${it.name_jp ? it.name_jp + ' ' : ''}${it.name_vi || ''}`;
           rows.push({
             kind: 'sub_line',
@@ -4579,11 +4878,11 @@ const App = (() => {
     }
 
     if (mode === 'custom_groups') {
-      // Mã 07: Gộp nhóm linh hoạt (VD: gộp 1+3+5 thành 1 giá; tách riêng 2, 4)
+      // Mã 07 & Mã 16: Gộp nhóm linh hoạt — giữ nguyên Tiêu đề hệ & tôn trọng STT người dùng nhập
       const allActiveItems = [];
       sections.forEach((sec, sIdx) => {
         (sec.items || []).forEach(it => {
-          if (it.included !== false) allActiveItems.push({ it, sIdx });
+          if (it.included !== false && !isSystemHeaderItem(it)) allActiveItems.push({ it, sIdx });
         });
       });
 
@@ -4605,9 +4904,22 @@ const App = (() => {
         let localStt = 1;
 
         activeItems.forEach(it => {
+          if (isSystemHeaderItem(it)) {
+            secVisibleRows.push({
+              type: 'sys_hdr',
+              stt: String(it.stt || '').trim(),
+              title: `${it.name_jp ? it.name_jp + ' ' : ''}${it.name_vi || ''}`.trim()
+            });
+            localStt = 1;
+            return;
+          }
           const gName = String(it.merge_group || '').trim();
           if (!gName) {
-            secVisibleRows.push({ type: 'single', stt: String(localStt++), it });
+            const singleStt = (it.stt_custom && String(it.stt || '').trim())
+              ? String(it.stt).trim()
+              : (String(it.stt || '').trim() || String(localStt));
+            localStt++;
+            secVisibleRows.push({ type: 'single', stt: singleStt, it });
           } else if (!emittedGroups.has(gName)) {
             emittedGroups.add(gName);
             const members = allActiveItems
@@ -4625,7 +4937,9 @@ const App = (() => {
         }
 
         secVisibleRows.forEach(entry => {
-          if (entry.type === 'single') {
+          if (entry.type === 'sys_hdr') {
+            rows.push({ kind: 'system_header', stt: entry.stt, title: entry.title });
+          } else if (entry.type === 'single') {
             const it = entry.it;
             rows.push({
               kind: 'item',
@@ -4675,7 +4989,7 @@ const App = (() => {
         }
       });
 
-      const anySecSubtotalShown = !hasCrossSecGroup && sections.some(s => s.showSubtotal && (s.items || []).some(x => x.included !== false));
+      const anySecSubtotalShown = !hasCrossSecGroup && sections.some(s => s.showSubtotal && (s.items || []).some(x => x.included !== false && !isSystemHeaderItem(x)));
       if (!anySecSubtotalShown) {
         rows.push({
           kind: 'subtotal',
@@ -4686,7 +5000,7 @@ const App = (() => {
       return { rows, showBeforeTaxInSummary: anySecSubtotalShown, mode, specLevel };
     }
 
-    // Mặc định: mode === 'itemized' (Mã 08: chi tiết giá từng thiết bị)
+    // Mặc định: mode === 'itemized' (Mã 08 & Mã 16: chi tiết giá từng thiết bị, giữ đúng STT & Tiêu đề hệ)
     sections.forEach(sec => {
       const activeItems = (sec.items || []).filter(it => it.included !== false);
       if (activeItems.length === 0) return;
@@ -4694,6 +5008,14 @@ const App = (() => {
         rows.push({ kind: 'sec_header', title: sec.title });
       }
       activeItems.forEach(it => {
+        if (isSystemHeaderItem(it)) {
+          rows.push({
+            kind: 'system_header',
+            stt: String(it.stt || '').trim(),
+            title: `${it.name_jp ? it.name_jp + ' ' : ''}${it.name_vi || ''}`.trim()
+          });
+          return;
+        }
         rows.push({
           kind: 'item',
           stt: it.stt || '',
@@ -4717,7 +5039,7 @@ const App = (() => {
       }
     });
 
-    const anySecSubtotal = sections.some(s => s.showSubtotal && (s.items || []).some(x => x.included !== false));
+    const anySecSubtotal = sections.some(s => s.showSubtotal && (s.items || []).some(x => x.included !== false && !isSystemHeaderItem(x)));
     if (!anySecSubtotal) {
       rows.push({
         kind: 'subtotal',
@@ -4751,6 +5073,13 @@ const App = (() => {
         tableRowsHtml += `
           <tr class="sec-header-row">
             <td colspan="7">${esc(r.title)}</td>
+          </tr>
+        `;
+      } else if (r.kind === 'system_header') {
+        tableRowsHtml += `
+          <tr class="system-header-row">
+            <td style="text-align:center;font-weight:700;">${esc(r.stt || '')}</td>
+            <td colspan="6" style="font-weight:700;">${esc(r.title || '')}</td>
           </tr>
         `;
       } else if (r.kind === 'item') {
@@ -6053,6 +6382,17 @@ const App = (() => {
             </td>
           </tr>
         `;
+      } else if (r.kind === 'system_header') {
+        itemsRowsWord += `
+          <tr>
+            <td style="border:1pt solid #000; padding:3.5pt 4pt; text-align:center; font-weight:bold; background:#e8eef7; color:#1f3864;">
+              ${esc(r.stt || '')}
+            </td>
+            <td colspan="6" style="border:1pt solid #000; padding:3.5pt 6pt; font-weight:bold; background:#e8eef7; color:#1f3864;">
+              ${esc(r.title || '')}
+            </td>
+          </tr>
+        `;
       } else if (r.kind === 'item') {
         const bgRow = (r.rowClass === 'group-parent-row' || r.rowClass === 'bundle-section-row') ? 'background:#f8fafc;' : '';
         itemsRowsWord += `
@@ -6548,6 +6888,13 @@ xmlns="http://www.w3.org/TR/REC-html40">
           E: { v: '', s: 8 }, F: { v: '', s: 8 }, G: { v: '', s: 8 }
         }, 20);
         merges.push(`A${rSec}:G${rSec}`);
+      } else if (r.kind === 'system_header') {
+        const rSys = addRow({
+          A: { v: r.stt || '', s: 7 },
+          B: { v: r.title || '', s: 8 }, C: { v: '', s: 8 }, D: { v: '', s: 8 },
+          E: { v: '', s: 8 }, F: { v: '', s: 8 }, G: { v: '', s: 8 }
+        }, 20);
+        merges.push(`B${rSys}:G${rSys}`);
       } else if (r.kind === 'item') {
         addRow({
           A: { v: r.stt || '', s: 9 },
@@ -8395,8 +8742,12 @@ xmlns="http://www.w3.org/TR/REC-html40">
     updateSectionField,
     addSection,
     removeSection,
+    addSystemHeaderItem,
+    resetSectionStt,
+    moveItemInSection,
     addBlankItem,
     removeItem,
+    updateItemStt,
     updateItemField,
     updateItemPriceCalc,
     handleItemPriceBlur,
